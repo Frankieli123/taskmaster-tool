@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>检查localStorage数据</title>
+</head>
+<body>
+    <h1>TaskMaster UI配置数据检查</h1>
+    <div id="output"></div>
+    
+    <script>
+        function checkStorageData() {
+            const output = document.getElementById('output');
+            
+            // 检查配置数据
+            const configData = localStorage.getItem('taskmaster-ui-config');
+            if (configData) {
+                const config = JSON.parse(configData);
+                output.innerHTML = `
+                    <h2>配置数据:</h2>
+                    <h3>供应商 (${config.providers?.length || 0} 个):</h3>
+                    <pre>${JSON.stringify(config.providers, null, 2)}</pre>
+                    
+                    <h3>模型 (${config.models?.length || 0} 个):</h3>
+                    <pre>${JSON.stringify(config.models, null, 2)}</pre>
+                    
+                    <h3>最后更新:</h3>
+                    <p>${config.lastUpdated || '未知'}</p>
+                `;
+            } else {
+                output.innerHTML = '<p>没有找到配置数据</p>';
+            }
+            
+            // 检查项目路径
+            const projectPath = localStorage.getItem('taskmaster-project-path');
+            if (projectPath) {
+                output.innerHTML += `
+                    <h3>项目路径:</h3>
+                    <p>${projectPath}</p>
+                `;
+            }
+        }
+        
+        // 页面加载时检查数据
+        window.onload = checkStorageData;
+        
+        // 每5秒刷新一次数据
+        setInterval(checkStorageData, 5000);
+    </script>
+</body>
+</html>
