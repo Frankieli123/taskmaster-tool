@@ -1,5 +1,7 @@
 # TaskMaster Tool
 
+[English](README.md) | [中文](README_CN.md)
+
 A modern, web-based configuration tool for managing API providers and AI models in Task Master AI projects.
 
 ## Features
