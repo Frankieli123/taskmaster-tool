@@ -21,17 +21,11 @@ export class ConfigManager {
         await this.initializeProjectPath();
 
         const stored = localStorage.getItem(this.storageKey);
-        console.log('🔍 ConfigManager.loadConfiguration - localStorage数据:', stored);
 
         if (stored) {
             const config = JSON.parse(stored);
             this.providers = config.providers || [];
             this.models = config.models || [];
-
-            console.log('🔍 解析后的供应商数据:', this.providers);
-            console.log('🔍 解析后的模型数据:', this.models);
-        } else {
-            console.log('⚠️ localStorage中没有找到配置数据');
         }
 
         // 不再加载默认配置，保持空状态直到用户导入真实配置
@@ -46,15 +40,7 @@ export class ConfigManager {
             lastUpdated: new Date().toISOString()
         };
 
-        console.log('💾 ConfigManager.saveConfiguration - 保存配置:', config);
-        console.log('💾 供应商数量:', this.providers.length);
-        console.log('💾 模型数量:', this.models.length);
-
         localStorage.setItem(this.storageKey, JSON.stringify(config));
-
-        // 验证保存是否成功
-        const saved = localStorage.getItem(this.storageKey);
-        console.log('✅ 保存验证 - localStorage中的数据:', saved ? '存在' : '不存在');
 
         return true;
     }
@@ -97,14 +83,6 @@ export class ConfigManager {
                 id: 'provider_foapi_default',
                 name: 'FoApi',
                 endpoint: 'https://v2.voct.top',
-                type: 'openai',
-                apiKey: '',
-                isValid: false
-            },
-            {
-                id: 'provider_whi_default',
-                name: 'Whi',
-                endpoint: 'https://doi9.top',
                 type: 'openai',
                 apiKey: '',
                 isValid: false

@@ -1354,7 +1354,6 @@ textarea:focus-visible {
     .filter-group input[type="text"] {
         min-width: auto;
         width: 100%;
-    }
         gap: 2px;
     }
 

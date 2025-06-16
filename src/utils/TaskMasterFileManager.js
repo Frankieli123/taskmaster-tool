@@ -84,6 +84,12 @@ export class TaskMasterFileManager {
         // 更新ai-services-unified.js
         await this.updateAiServicesUnifiedFile(providerName);
 
+        // 更新config-manager.js
+        await this.updateConfigManagerFile(providerName);
+
+        // 更新UI工具配置文件
+        await this.updateUIToolConfigs(providerName, providerConfig);
+
         // 成功创建文件
         return { created: true, filePath: providerFilePath };
     }
@@ -512,6 +518,111 @@ export class ${className} extends BaseAIProvider {
     }
 
     /**
+     * 更新config-manager.js文件，添加新供应商的配置
+     * @param {string} providerName - 供应商名称
+     */
+    async updateConfigManagerFile(providerName) {
+        const configManagerPath = 'scripts/modules/config-manager.js';
+        const providerKey = providerName.toLowerCase();
+        const apiKeyName = `${providerName.toUpperCase()}_API_KEY`;
+
+        await this.saveConfig.updateExistingFile(configManagerPath, (existingContent) => {
+            let updatedContent = existingContent;
+
+            // 1. 添加到keyMap中
+            const keyMapRegex = /const keyMap = \{([^}]+)\};/s;
+            const keyMapMatch = existingContent.match(keyMapRegex);
+
+            if (keyMapMatch && !keyMapMatch[1].includes(`${providerKey}:`)) {
+                const keyMapContent = keyMapMatch[1];
+                // 在最后一个条目前添加新条目
+                const newKeyMapEntry = `\t\t\t${providerKey}: '${apiKeyName}', // ${providerName} uses its own API key`;
+
+                // 找到最后一个注释行的位置
+                const commentIndex = keyMapContent.lastIndexOf('// Add other providers as needed');
+                if (commentIndex !== -1) {
+                    const beforeComment = keyMapContent.substring(0, commentIndex);
+                    const afterComment = keyMapContent.substring(commentIndex);
+                    const newKeyMapContent = beforeComment + newKeyMapEntry + '\n\t\t\t' + afterComment;
+                    updatedContent = updatedContent.replace(keyMapRegex, `const keyMap = {${newKeyMapContent}\t\t};`);
+                }
+            }
+
+            // 2. 添加到getMcpApiKeyStatus函数的switch语句中
+            const switchRegex = /switch \(providerName\) \{([\s\S]*?)\s*default:/;
+            const switchMatch = updatedContent.match(switchRegex);
+
+            if (switchMatch && !switchMatch[1].includes(`case '${providerKey}':`)) {
+                const switchContent = switchMatch[1];
+                const newCaseStatement = `\t\t\tcase '${providerKey}':\n\t\t\t\tapiKeyToCheck = mcpEnv.${apiKeyName}; // ${providerName} uses its own API key\n\t\t\t\tplaceholderValue = 'YOUR_${apiKeyName}_HERE';\n\t\t\t\tbreak;`;
+
+                // 在default前添加新的case
+                const newSwitchContent = switchContent + '\n' + newCaseStatement + '\n\t\t\t';
+                updatedContent = updatedContent.replace(switchRegex, `switch (providerName) {${newSwitchContent}default:`);
+            }
+
+            return updatedContent;
+        });
+
+        return true;
+    }
+
+    /**
+     * 更新UI工具配置文件
+     * @param {string} providerName - 供应商名称
+     * @param {object} providerConfig - 供应商配置
+     */
+    async updateUIToolConfigs(providerName, providerConfig) {
+        const providerKey = providerName.toLowerCase();
+
+        // 只更新ConfigTransformer.js的映射配置（用于数据转换）
+        // 不更新默认供应商配置，因为UI应该只显示实际导入的供应商
+
+        // 更新UI工具的ConfigTransformer.js
+        const configTransformerPath = 'ui-config-tool/src/utils/ConfigTransformer.js';
+        await this.saveConfig.updateExistingFile(configTransformerPath, (existingContent) => {
+            let updatedContent = existingContent;
+
+            // 添加到providerTypeMap
+            const typeMapRegex = /this\.providerTypeMap = \{([^}]+)\};/s;
+            const typeMapMatch = existingContent.match(typeMapRegex);
+
+            if (typeMapMatch && !typeMapMatch[1].includes(`'${providerKey}':`)) {
+                const typeMapContent = typeMapMatch[1];
+                const newTypeMapEntry = `\t\t\t'${providerKey}': '${providerConfig.type || 'openai'}'`;
+                const newTypeMapContent = typeMapContent.trim() + ',\n' + newTypeMapEntry + '\n\t\t';
+                updatedContent = updatedContent.replace(typeMapRegex, `this.providerTypeMap = {${newTypeMapContent}};`);
+            }
+
+            // 添加到defaultEndpoints
+            const endpointsRegex = /this\.defaultEndpoints = \{([^}]+)\};/s;
+            const endpointsMatch = updatedContent.match(endpointsRegex);
+
+            if (endpointsMatch && !endpointsMatch[1].includes(`'${providerKey}':`)) {
+                const endpointsContent = endpointsMatch[1];
+                const newEndpointEntry = `\t\t\t'${providerKey}': '${providerConfig.endpoint || `https://api.${providerKey}.com`}'`;
+                const newEndpointsContent = endpointsContent.trim() + ',\n' + newEndpointEntry + '\n\t\t';
+                updatedContent = updatedContent.replace(endpointsRegex, `this.defaultEndpoints = {${newEndpointsContent}};`);
+            }
+
+            // 添加到nameMap（在transformProviderName方法中）
+            const nameMapRegex = /const nameMap = \{([^}]+)\};/s;
+            const nameMapMatch = updatedContent.match(nameMapRegex);
+
+            if (nameMapMatch && !nameMapMatch[1].includes(`'${providerKey}':`)) {
+                const nameMapContent = nameMapMatch[1];
+                const newNameMapEntry = `\t\t\t'${providerKey}': '${providerName}'`;
+                const newNameMapContent = nameMapContent.trim() + ',\n' + newNameMapEntry + '\n\t\t';
+                updatedContent = updatedContent.replace(nameMapRegex, `const nameMap = {${newNameMapContent}};`);
+            }
+
+            return updatedContent;
+        });
+
+        return true;
+    }
+
+    /**
      * 生成完整的文件更新包
      */
     async generateFileUpdatePackage(providerName, originalModelId, modelConfig) {
@@ -536,5 +647,476 @@ export class ${className} extends BaseAIProvider {
         }
 
         return { success: false, error: '生成文件更新包失败' };
+    }
+
+    /**
+     * 完整删除供应商及其相关文件和配置
+     * @param {string} providerName - 供应商名称
+     * @returns {Promise<Object>} - 删除结果
+     */
+    async deleteProviderFromTaskMaster(providerName) {
+        const results = {
+            success: true,
+            deletedFiles: [],
+            updatedFiles: [],
+            errors: [],
+            warnings: []
+        };
+
+        try {
+            const projectDirHandle = this.saveConfig.directoryHandleCache.get('taskmaster-project');
+            if (!projectDirHandle) {
+                throw new Error('TaskMaster项目目录句柄不可用');
+            }
+
+            // 1. 检查配置引用
+            const configUsage = await this.checkProviderUsageInConfig(providerName);
+            if (configUsage.isUsed) {
+                results.warnings.push(`供应商 ${providerName} 正在被以下配置使用: ${configUsage.usedIn.join(', ')}`);
+                results.warnings.push('建议先更改配置再删除供应商');
+            }
+
+            // 2. 删除 supported-models.json 中的供应商条目
+            try {
+                const removed = await this.removeProviderFromSupportedModels(providerName);
+                if (removed) {
+                    results.updatedFiles.push('scripts/modules/supported-models.json');
+                }
+            } catch (error) {
+                results.errors.push(`删除 supported-models.json 中的条目失败: ${error.message}`);
+                results.success = false;
+            }
+
+            // 3. 删除 .cursor/mcp.json 中的API密钥
+            try {
+                const removed = await this.removeProviderFromMCPConfig(providerName);
+                if (removed) {
+                    results.updatedFiles.push('.cursor/mcp.json');
+                }
+            } catch (error) {
+                results.errors.push(`删除 MCP 配置中的API密钥失败: ${error.message}`);
+                results.success = false;
+            }
+
+            // 4. 删除供应商JavaScript文件
+            try {
+                const deleted = await this.deleteProviderFile(providerName);
+                if (deleted) {
+                    results.deletedFiles.push(`src/ai-providers/${providerName.toLowerCase()}.js`);
+                }
+            } catch (error) {
+                results.errors.push(`删除供应商文件失败: ${error.message}`);
+                results.success = false;
+            }
+
+            // 5. 更新 index.js 文件
+            try {
+                const updated = await this.updateProviderIndexFileForDeletion(providerName);
+                if (updated) {
+                    results.updatedFiles.push('src/ai-providers/index.js');
+                }
+            } catch (error) {
+                results.errors.push(`更新 index.js 失败: ${error.message}`);
+                results.success = false;
+            }
+
+            // 6. 更新 ai-services-unified.js 文件
+            try {
+                const updated = await this.updateAiServicesUnifiedFileForDeletion(providerName);
+                if (updated) {
+                    results.updatedFiles.push('scripts/modules/ai-services-unified.js');
+                }
+            } catch (error) {
+                results.errors.push(`更新 ai-services-unified.js 失败: ${error.message}`);
+                results.success = false;
+            }
+
+            // 7. 更新 config-manager.js 文件
+            try {
+                const updated = await this.removeProviderFromConfigManager(providerName);
+                if (updated) {
+                    results.updatedFiles.push('scripts/modules/config-manager.js');
+                }
+            } catch (error) {
+                results.errors.push(`更新 config-manager.js 失败: ${error.message}`);
+                results.success = false;
+            }
+
+            // 8. 更新 UI工具的 ConfigTransformer.js 文件（跳过configManager.js，因为UI只显示实际导入的供应商）
+            try {
+                const updated = await this.removeProviderFromConfigTransformer(providerName);
+                if (updated) {
+                    results.updatedFiles.push('ui-config-tool/src/utils/ConfigTransformer.js');
+                }
+            } catch (error) {
+                results.errors.push(`更新 ConfigTransformer.js 失败: ${error.message}`);
+                results.success = false;
+            }
+
+            return results;
+        } catch (error) {
+            results.success = false;
+            results.errors.push(`删除供应商失败: ${error.message}`);
+            return results;
+        }
+    }
+
+    /**
+     * 检查供应商在配置中的使用情况
+     * @param {string} providerName - 供应商名称
+     * @returns {Promise<Object>} - 使用情况
+     */
+    async checkProviderUsageInConfig(providerName) {
+        const result = {
+            isUsed: false,
+            usedIn: []
+        };
+
+        try {
+            const projectDirHandle = this.saveConfig.directoryHandleCache.get('taskmaster-project');
+            if (!projectDirHandle) {
+                return result;
+            }
+
+            // 检查 .taskmaster/config.json
+            const configContent = await this.saveConfig.readFileFromDirectory(projectDirHandle, '.taskmaster/config.json');
+            if (configContent) {
+                const config = JSON.parse(configContent);
+                if (config.models) {
+                    for (const [role, modelConfig] of Object.entries(config.models)) {
+                        if (modelConfig.provider === providerName.toLowerCase()) {
+                            result.isUsed = true;
+                            result.usedIn.push(`${role} 模型`);
+                        }
+                    }
+                }
+            }
+
+            return result;
+        } catch (error) {
+            // 配置文件读取失败，假设没有使用
+            return result;
+        }
+    }
+
+    /**
+     * 从 supported-models.json 中删除供应商条目
+     * @param {string} providerName - 供应商名称
+     * @returns {Promise<boolean>} - 是否删除成功
+     */
+    async removeProviderFromSupportedModels(providerName) {
+        const supportedModelsPath = 'scripts/modules/supported-models.json';
+        const projectDirHandle = this.saveConfig.directoryHandleCache.get('taskmaster-project');
+
+        try {
+            const content = await this.saveConfig.readFileFromDirectory(projectDirHandle, supportedModelsPath);
+            if (!content) {
+                return false; // 文件不存在
+            }
+
+            const supportedModels = JSON.parse(content);
+            const providerKey = providerName.toLowerCase();
+
+            if (supportedModels[providerKey]) {
+                delete supportedModels[providerKey];
+
+                // 写入更新后的文件
+                await this.saveConfig.writeFileToDirectory(
+                    projectDirHandle,
+                    supportedModelsPath,
+                    JSON.stringify(supportedModels, null, 2)
+                );
+
+                return true;
+            }
+
+            return false; // 供应商不存在
+        } catch (error) {
+            throw new Error(`删除 supported-models.json 中的供应商失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 从 .cursor/mcp.json 中删除供应商的API密钥
+     * @param {string} providerName - 供应商名称
+     * @returns {Promise<boolean>} - 是否删除成功
+     */
+    async removeProviderFromMCPConfig(providerName) {
+        const mcpConfigPath = '.cursor/mcp.json';
+        const projectDirHandle = this.saveConfig.directoryHandleCache.get('taskmaster-project');
+
+        try {
+            const content = await this.saveConfig.readFileFromDirectory(projectDirHandle, mcpConfigPath);
+            if (!content) {
+                return false; // 文件不存在
+            }
+
+            const mcpConfig = JSON.parse(content);
+            const apiKeyName = `${providerName.toUpperCase()}_API_KEY`;
+            let removed = false;
+
+            // 检查并删除API密钥
+            if (mcpConfig.mcpServers && mcpConfig.mcpServers['taskmaster-api'] && mcpConfig.mcpServers['taskmaster-api'].env) {
+                const env = mcpConfig.mcpServers['taskmaster-api'].env;
+                if (env[apiKeyName]) {
+                    delete env[apiKeyName];
+                    removed = true;
+                }
+            }
+
+            if (removed) {
+                // 写入更新后的文件
+                await this.saveConfig.writeFileToDirectory(
+                    projectDirHandle,
+                    mcpConfigPath,
+                    JSON.stringify(mcpConfig, null, 2)
+                );
+            }
+
+            return removed;
+        } catch (error) {
+            throw new Error(`删除 MCP 配置中的API密钥失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 删除供应商JavaScript文件
+     * @param {string} providerName - 供应商名称
+     * @returns {Promise<boolean>} - 是否删除成功
+     */
+    async deleteProviderFile(providerName) {
+        const providerFilePath = `src/ai-providers/${providerName.toLowerCase()}.js`;
+        const projectDirHandle = this.saveConfig.directoryHandleCache.get('taskmaster-project');
+
+        try {
+            const deleted = await this.saveConfig.deleteFileFromDirectory(projectDirHandle, providerFilePath);
+            return deleted;
+        } catch (error) {
+            throw new Error(`删除供应商文件失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 更新 index.js 文件，删除供应商的导出
+     * @param {string} providerName - 供应商名称
+     * @returns {Promise<boolean>} - 是否更新成功
+     */
+    async updateProviderIndexFileForDeletion(providerName) {
+        const indexPath = 'src/ai-providers/index.js';
+        const className = `${providerName.charAt(0).toUpperCase() + providerName.slice(1)}Provider`;
+        const projectDirHandle = this.saveConfig.directoryHandleCache.get('taskmaster-project');
+
+        try {
+            const updated = await this.saveConfig.updateFileContent(projectDirHandle, indexPath, (existingContent) => {
+                // 删除导出行
+                const exportLine = `export { ${className} } from './${providerName.toLowerCase()}.js';`;
+                const lines = existingContent.split('\n');
+                const filteredLines = lines.filter(line => !line.includes(exportLine.trim()));
+                return filteredLines.join('\n');
+            });
+
+            return updated;
+        } catch (error) {
+            throw new Error(`更新 index.js 文件失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 更新 ai-services-unified.js 文件，删除供应商的导入和实例
+     * @param {string} providerName - 供应商名称
+     * @returns {Promise<boolean>} - 是否更新成功
+     */
+    async updateAiServicesUnifiedFileForDeletion(providerName) {
+        const unifiedPath = 'scripts/modules/ai-services-unified.js';
+        const className = `${providerName.charAt(0).toUpperCase() + providerName.slice(1)}Provider`;
+        const providerKey = providerName.toLowerCase();
+        const projectDirHandle = this.saveConfig.directoryHandleCache.get('taskmaster-project');
+
+        try {
+            const updated = await this.saveConfig.updateFileContent(projectDirHandle, unifiedPath, (existingContent) => {
+                let updatedContent = existingContent;
+
+                // 1. 从import语句中删除
+                const importRegex = /import\s*\{([^}]+)\}\s*from\s*['"]\.\.\/\.\.\/src\/ai-providers\/index\.js['"];?/;
+                const importMatch = existingContent.match(importRegex);
+
+                if (importMatch && importMatch[1].includes(className)) {
+                    const currentImports = importMatch[1]
+                        .split(',')
+                        .map(imp => imp.trim())
+                        .filter(imp => imp !== className)
+                        .join(',\n\t');
+
+                    updatedContent = updatedContent.replace(importRegex,
+                        `import {\n\t${currentImports}\n} from '../../src/ai-providers/index.js';`);
+                }
+
+                // 2. 从PROVIDERS对象中删除
+                const providerInstanceRegex = new RegExp(`\\s*${providerKey}:\\s*new\\s+${className}\\(\\)\\s*,?`, 'g');
+                updatedContent = updatedContent.replace(providerInstanceRegex, '');
+
+                // 3. 从keyMap中删除
+                const keyMapEntryRegex = new RegExp(`\\s*${providerKey}:\\s*'[^']*'[^,]*,?`, 'g');
+                updatedContent = updatedContent.replace(keyMapEntryRegex, '');
+
+                // 清理多余的逗号和空行
+                updatedContent = updatedContent.replace(/,\s*,/g, ',');
+                updatedContent = updatedContent.replace(/,\s*\}/g, '\n}');
+                updatedContent = updatedContent.replace(/\n\s*\n\s*\n/g, '\n\n');
+
+                return updatedContent;
+            });
+
+            return updated;
+        } catch (error) {
+            throw new Error(`更新 ai-services-unified.js 文件失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 从 config-manager.js 中删除供应商的配置
+     * @param {string} providerName - 供应商名称
+     * @returns {Promise<boolean>} - 是否更新成功
+     */
+    async removeProviderFromConfigManager(providerName) {
+        const configManagerPath = 'scripts/modules/config-manager.js';
+        const providerKey = providerName.toLowerCase();
+        const projectDirHandle = this.saveConfig.directoryHandleCache.get('taskmaster-project');
+
+        try {
+            const updated = await this.saveConfig.updateFileContent(projectDirHandle, configManagerPath, (existingContent) => {
+                let updatedContent = existingContent;
+
+                // 1. 从keyMap中删除供应商条目
+                const keyMapRegex = /const keyMap = \{([^}]+)\};/s;
+                const keyMapMatch = updatedContent.match(keyMapRegex);
+
+                if (keyMapMatch) {
+                    const keyMapContent = keyMapMatch[1];
+                    // 删除该供应商的行
+                    const providerLineRegex = new RegExp(`\\s*${providerKey}:\\s*'[^']*'[^,]*,?\\s*`, 'g');
+                    const newKeyMapContent = keyMapContent.replace(providerLineRegex, '');
+
+                    // 清理多余的逗号
+                    const cleanedKeyMapContent = newKeyMapContent.replace(/,\s*,/g, ',').replace(/,\s*\}/g, '\n\t\t}');
+
+                    updatedContent = updatedContent.replace(keyMapRegex, `const keyMap = {${cleanedKeyMapContent}};`);
+                }
+
+                // 2. 从getMcpApiKeyStatus函数的switch语句中删除case
+                const switchRegex = /switch \(providerName\) \{([\s\S]*?)\s*default:/;
+                const switchMatch = updatedContent.match(switchRegex);
+
+                if (switchMatch) {
+                    const switchContent = switchMatch[1];
+                    // 删除该供应商的case语句
+                    const caseRegex = new RegExp(`\\s*case\\s*'${providerKey}':[\\s\\S]*?break;`, 'g');
+                    const newSwitchContent = switchContent.replace(caseRegex, '');
+
+                    updatedContent = updatedContent.replace(switchRegex, `switch (providerName) {${newSwitchContent}\n\t\t\tdefault:`);
+                }
+
+                return updatedContent;
+            });
+
+            return updated;
+        } catch (error) {
+            throw new Error(`更新 config-manager.js 文件失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 从UI工具的configManager.js中删除默认供应商配置
+     * @param {string} providerName - 供应商名称
+     * @returns {Promise<boolean>} - 是否更新成功
+     */
+    async removeProviderFromUIConfigManager(providerName) {
+        const uiConfigManagerPath = 'ui-config-tool/src/utils/configManager.js';
+        const providerKey = providerName.toLowerCase();
+        const projectDirHandle = this.saveConfig.directoryHandleCache.get('taskmaster-project');
+
+        try {
+            const updated = await this.saveConfig.updateFileContent(projectDirHandle, uiConfigManagerPath, (existingContent) => {
+                // 删除默认供应商配置对象
+                const providerObjectRegex = new RegExp(
+                    `\\s*\\{[^}]*id:\\s*'provider_${providerKey}_default'[^}]*\\}\\s*,?`,
+                    'g'
+                );
+
+                let updatedContent = existingContent.replace(providerObjectRegex, '');
+
+                // 清理多余的逗号
+                updatedContent = updatedContent.replace(/,\s*,/g, ',');
+                updatedContent = updatedContent.replace(/,\s*\]/g, '\n        ]');
+
+                return updatedContent;
+            });
+
+            return updated;
+        } catch (error) {
+            throw new Error(`更新 UI configManager.js 文件失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 从UI工具的ConfigTransformer.js中删除供应商配置
+     * @param {string} providerName - 供应商名称
+     * @returns {Promise<boolean>} - 是否更新成功
+     */
+    async removeProviderFromConfigTransformer(providerName) {
+        const configTransformerPath = 'ui-config-tool/src/utils/ConfigTransformer.js';
+        const providerKey = providerName.toLowerCase();
+        const projectDirHandle = this.saveConfig.directoryHandleCache.get('taskmaster-project');
+
+        try {
+            const updated = await this.saveConfig.updateFileContent(projectDirHandle, configTransformerPath, (existingContent) => {
+                let updatedContent = existingContent;
+
+                // 1. 从providerTypeMap中删除
+                const typeMapRegex = /this\.providerTypeMap = \{([^}]+)\};/s;
+                const typeMapMatch = updatedContent.match(typeMapRegex);
+
+                if (typeMapMatch) {
+                    const typeMapContent = typeMapMatch[1];
+                    const providerLineRegex = new RegExp(`\\s*'${providerKey}':\\s*'[^']*'\\s*,?`, 'g');
+                    const newTypeMapContent = typeMapContent.replace(providerLineRegex, '');
+                    const cleanedTypeMapContent = newTypeMapContent.replace(/,\s*,/g, ',').replace(/,\s*\}/g, '\n        }');
+
+                    updatedContent = updatedContent.replace(typeMapRegex, `this.providerTypeMap = {${cleanedTypeMapContent}};`);
+                }
+
+                // 2. 从defaultEndpoints中删除
+                const endpointsRegex = /this\.defaultEndpoints = \{([^}]+)\};/s;
+                const endpointsMatch = updatedContent.match(endpointsRegex);
+
+                if (endpointsMatch) {
+                    const endpointsContent = endpointsMatch[1];
+                    const providerLineRegex = new RegExp(`\\s*'${providerKey}':\\s*'[^']*'\\s*,?`, 'g');
+                    const newEndpointsContent = endpointsContent.replace(providerLineRegex, '');
+                    const cleanedEndpointsContent = newEndpointsContent.replace(/,\s*,/g, ',').replace(/,\s*\}/g, '\n        }');
+
+                    updatedContent = updatedContent.replace(endpointsRegex, `this.defaultEndpoints = {${cleanedEndpointsContent}};`);
+                }
+
+                // 3. 从nameMap中删除
+                const nameMapRegex = /const nameMap = \{([^}]+)\};/s;
+                const nameMapMatch = updatedContent.match(nameMapRegex);
+
+                if (nameMapMatch) {
+                    const nameMapContent = nameMapMatch[1];
+                    const providerLineRegex = new RegExp(`\\s*'${providerKey}':\\s*'[^']*'\\s*,?`, 'g');
+                    const newNameMapContent = nameMapContent.replace(providerLineRegex, '');
+                    const cleanedNameMapContent = newNameMapContent.replace(/,\s*,/g, ',').replace(/,\s*\}/g, '\n        }');
+
+                    updatedContent = updatedContent.replace(nameMapRegex, `const nameMap = {${cleanedNameMapContent}};`);
+                }
+
+                return updatedContent;
+            });
+
+            return updated;
+        } catch (error) {
+            throw new Error(`更新 ConfigTransformer.js 文件失败: ${error.message}`);
+        }
     }
 }

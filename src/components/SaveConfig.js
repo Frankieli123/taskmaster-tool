@@ -1093,4 +1093,81 @@ export class SaveConfig {
             throw error;
         }
     }
+
+    /**
+     * 从目录中删除指定文件
+     * @param {FileSystemDirectoryHandle} dirHandle - 目录句柄
+     * @param {string} filePath - 要删除的文件路径
+     * @returns {Promise<boolean>} - 删除是否成功
+     */
+    async deleteFileFromDirectory(dirHandle, filePath) {
+        try {
+            const pathParts = filePath.split('/').filter(part => part.length > 0);
+            let currentDir = dirHandle;
+
+            // 导航到文件所在的目录
+            for (let i = 0; i < pathParts.length - 1; i++) {
+                try {
+                    currentDir = await currentDir.getDirectoryHandle(pathParts[i]);
+                } catch (error) {
+                    if (error.name === 'NotFoundError') {
+                        Logger.warn(`Directory not found: ${pathParts.slice(0, i + 1).join('/')}`);
+                        return false; // 目录不存在，文件也不存在
+                    }
+                    throw error;
+                }
+            }
+
+            const fileName = pathParts[pathParts.length - 1];
+
+            try {
+                await currentDir.removeEntry(fileName);
+                Logger.info(`Successfully deleted file: ${filePath}`);
+                return true;
+            } catch (error) {
+                if (error.name === 'NotFoundError') {
+                    Logger.warn(`File not found: ${filePath}`);
+                    return false; // 文件不存在，视为删除成功
+                }
+                throw error;
+            }
+        } catch (error) {
+            Logger.error(`Failed to delete file: ${filePath}`, { error: error.message }, error);
+            throw error;
+        }
+    }
+
+    /**
+     * 更新文件内容
+     * @param {FileSystemDirectoryHandle} dirHandle - 目录句柄
+     * @param {string} filePath - 文件路径
+     * @param {Function} updateFunction - 更新函数，接收当前内容，返回新内容
+     * @returns {Promise<boolean>} - 更新是否成功
+     */
+    async updateFileContent(dirHandle, filePath, updateFunction) {
+        try {
+            // 读取当前文件内容
+            let currentContent = '';
+            try {
+                currentContent = await this.readFileFromDirectory(dirHandle, filePath);
+            } catch (error) {
+                if (error.name === 'NotFoundError') {
+                    Logger.warn(`File not found for update: ${filePath}`);
+                    return false;
+                }
+                throw error;
+            }
+
+            // 应用更新函数
+            const newContent = updateFunction(currentContent);
+
+            // 写入新内容
+            await this.writeFileToDirectory(dirHandle, filePath, newContent);
+            Logger.info(`Successfully updated file: ${filePath}`);
+            return true;
+        } catch (error) {
+            Logger.error(`Failed to update file: ${filePath}`, { error: error.message }, error);
+            throw error;
+        }
+    }
 }

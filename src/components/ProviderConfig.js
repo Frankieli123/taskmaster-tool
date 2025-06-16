@@ -42,13 +42,21 @@ export class ProviderConfig {
         try {
             this.providers = await this.configManager.getProviders();
 
-            // 调试：检查加载的供应商数据
-            console.log('🔍 ProviderConfig.loadProviders - 加载的供应商数据:', this.providers);
-            console.log('🔍 供应商数量:', this.providers.length);
+
 
             this.renderProviders();
         } catch (error) {
-            console.error('❌ 加载供应商失败:', error);
+            // 使用 ErrorHandler 处理错误，并显示用户友好的错误信息
+            ErrorHandler.handle(error, {
+                component: 'ProviderConfig',
+                method: 'loadProviders',
+                action: 'load_providers'
+            });
+
+            // 显示错误状态给用户
+            if (window.app && window.app.updateStatus) {
+                window.app.updateStatus('加载供应商失败，请检查配置', 'error');
+            }
         }
     }
 
@@ -317,29 +325,118 @@ export class ProviderConfig {
     }
 
     async deleteProvider(providerId) {
-        const confirmed = await UINotification.confirm(
-            '确定要删除此服务商吗？此操作无法撤销。',
-            {
-                title: '删除服务商',
-                confirmText: '删除',
-                cancelText: '取消'
+        const provider = this.providers.find(p => p.id === providerId);
+        if (!provider) {
+            UINotification.error('供应商未找到');
+            return;
+        }
+
+        // 检查是否有TaskMaster项目路径
+        const hasTaskMasterProject = this.configManager.isProjectValid();
+        let confirmMessage = '确定要删除此服务商吗？此操作无法撤销。';
+
+        if (hasTaskMasterProject) {
+            // 检查配置引用
+            try {
+                const configUsage = await this.fileManager.checkProviderUsageInConfig(provider.name);
+                if (configUsage.isUsed) {
+                    confirmMessage += `\n\n⚠️ 警告：该供应商正在被以下配置使用：\n${configUsage.usedIn.join(', ')}\n\n删除后这些配置将失效，建议先更改配置。`;
+                }
+
+                confirmMessage += '\n\n将删除以下内容：';
+                confirmMessage += '\n• UI配置中的供应商和模型';
+                confirmMessage += '\n• TaskMaster项目中的供应商文件';
+                confirmMessage += '\n• supported-models.json中的条目';
+                confirmMessage += '\n• .cursor/mcp.json中的API密钥';
+                confirmMessage += '\n• 相关导入和导出配置';
+            } catch (error) {
+                Logger.warn('检查配置引用失败', { error: error.message });
             }
-        );
+        }
+
+        const confirmed = await UINotification.confirm(confirmMessage, {
+            title: '删除服务商',
+            confirmText: '删除',
+            cancelText: '取消'
+        });
 
         if (!confirmed) {
             return;
         }
 
         try {
+            Logger.info(`开始删除供应商: ${provider.name}`);
+
+            // 1. 从UI配置中删除供应商
             await this.configManager.deleteProvider(providerId);
+            Logger.info('✅ 已从UI配置中删除供应商');
+
+            // 2. 如果有TaskMaster项目，删除相关文件
+            if (hasTaskMasterProject) {
+                Logger.info('🔧 开始清理TaskMaster项目文件...');
+
+                try {
+                    const deleteResult = await this.fileManager.deleteProviderFromTaskMaster(provider.name);
+
+                    if (deleteResult.success) {
+                        Logger.info('✅ TaskMaster项目文件清理完成');
+
+                        // 显示详细的删除结果
+                        let resultMessage = '供应商删除成功！\n\n';
+
+                        if (deleteResult.deletedFiles.length > 0) {
+                            resultMessage += '已删除文件：\n';
+                            deleteResult.deletedFiles.forEach(file => {
+                                resultMessage += `• ${file}\n`;
+                            });
+                        }
+
+                        if (deleteResult.updatedFiles.length > 0) {
+                            resultMessage += '\n已更新文件：\n';
+                            deleteResult.updatedFiles.forEach(file => {
+                                resultMessage += `• ${file}\n`;
+                            });
+                        }
+
+                        if (deleteResult.warnings.length > 0) {
+                            resultMessage += '\n⚠️ 警告：\n';
+                            deleteResult.warnings.forEach(warning => {
+                                resultMessage += `• ${warning}\n`;
+                            });
+                        }
+
+                        UINotification.success(resultMessage, { duration: 8000 });
+                    } else {
+                        Logger.warn('TaskMaster项目文件清理部分失败');
+
+                        let errorMessage = '供应商从UI配置中删除成功，但TaskMaster项目文件清理遇到问题：\n\n';
+                        deleteResult.errors.forEach(error => {
+                            errorMessage += `• ${error}\n`;
+                        });
+
+                        UINotification.warning(errorMessage, { duration: 10000 });
+                    }
+                } catch (taskMasterError) {
+                    Logger.error('TaskMaster项目文件清理失败', { error: taskMasterError.message });
+                    UINotification.warning(
+                        `供应商从UI配置中删除成功，但TaskMaster项目文件清理失败：\n${taskMasterError.message}\n\n请手动检查并清理相关文件。`,
+                        { duration: 10000 }
+                    );
+                }
+            } else {
+                UINotification.success('供应商删除成功');
+            }
+
+            // 3. 刷新UI
             await this.loadProviders();
 
             // Dispatch change event
             document.dispatchEvent(new CustomEvent('configChanged'));
 
-            Logger.info('Provider deleted successfully', { providerId });
-            UINotification.success('服务商删除成功');
+            Logger.info('Provider deleted successfully', { providerId, providerName: provider.name });
+
         } catch (error) {
+            Logger.error('删除供应商失败', { error: error.message, providerId });
             ErrorHandler.handle(error, {
                 component: 'ProviderConfig',
                 method: 'deleteProvider',
