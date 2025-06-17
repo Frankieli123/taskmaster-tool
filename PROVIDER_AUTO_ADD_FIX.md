@@ -31,7 +31,7 @@ UI工具在保存供应商时，没有自动更新所有必要的配置文件，
 
 ### 修复后的完整更新流程
 
-现在保存供应商时会自动更新以下**11个位置**：
+现在保存供应商时会自动更新以下**12个位置**：
 
 1. ✅ 创建 `src/ai-providers/{provider}.js` 文件
 2. ✅ 更新 `src/ai-providers/index.js` 导出
@@ -40,10 +40,11 @@ UI工具在保存供应商时，没有自动更新所有必要的配置文件，
 5. ✅ 更新 `.cursor/mcp.json` API密钥
 6. ✅ **更新 `scripts/modules/config-manager.js` keyMap** *(新增)*
 7. ✅ **更新 `scripts/modules/config-manager.js` getMcpApiKeyStatus** *(新增)*
-8. ✅ **更新 `ui-config-tool/src/utils/configManager.js` 默认配置** *(新增)*
-9. ✅ **更新 `ui-config-tool/src/utils/ConfigTransformer.js` 类型映射** *(新增)*
-10. ✅ **更新 `ui-config-tool/src/utils/ConfigTransformer.js` 端点配置** *(新增)*
-11. ✅ **更新 `ui-config-tool/src/utils/ConfigTransformer.js` 名称映射** *(新增)*
+8. ✅ **更新 `scripts/init.js` MCP配置模板** *(新增)*
+9. ✅ **更新 `ui-config-tool/src/utils/configManager.js` 默认配置** *(新增)*
+10. ✅ **更新 `ui-config-tool/src/utils/ConfigTransformer.js` 类型映射** *(新增)*
+11. ✅ **更新 `ui-config-tool/src/utils/ConfigTransformer.js` 端点配置** *(新增)*
+12. ✅ **更新 `ui-config-tool/src/utils/ConfigTransformer.js` 名称映射** *(新增)*
 
 ### 技术实现细节
 
@@ -65,7 +66,7 @@ UI工具在保存供应商时，没有自动更新所有必要的配置文件，
 
 2. **重新添加供应商**
    - 通过UI工具重新添加Whi供应商
-   - 验证所有11个位置都被自动更新
+   - 验证所有12个位置都被自动更新
 
 3. **验证功能完整性**
    - 检查TaskMaster项目是否能正常识别新供应商

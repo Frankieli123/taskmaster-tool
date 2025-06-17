@@ -93,7 +93,7 @@ class ModelConfigTester {
       
       // 2. 等待模态框出现
       this.log('步骤2: 等待添加模型模态框出现');
-      const modal = await this.waitForElement('#model-modal');
+      await this.waitForElement('#model-modal');
       
       // 3. 填写表单
       this.log('步骤3: 填写模型表单');
@@ -163,7 +163,7 @@ class ModelConfigTester {
       this.simulateClick(editButton);
       
       // 等待模态框并修改名称
-      const modal = await this.waitForElement('#model-modal');
+      await this.waitForElement('#model-modal');
       const nameInput = await this.waitForElement('#model-name');
       
       this.simulateInput(nameInput, 'Updated Test Model');
@@ -376,9 +376,9 @@ class ModelConfigTester {
       
       const addButton = await this.waitForElement('#add-model-btn');
       this.simulateClick(addButton);
-      
-      const modal = await this.waitForElement('#model-modal');
-      
+
+      await this.waitForElement('#model-modal');
+
       // 尝试提交空表单
       const saveButton = await this.waitForElement('#save-model-btn');
       this.simulateClick(saveButton);

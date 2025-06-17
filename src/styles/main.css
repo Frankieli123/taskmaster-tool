@@ -15,6 +15,7 @@
     --primary-color: #2563eb;
     --primary-hover: #1d4ed8;
     --secondary-color: #64748b;
+    --accent-color: #8b5cf6;
     --success-color: #047857;
     --warning-color: #d97706;
     --danger-color: #dc2626;
@@ -334,7 +335,7 @@ textarea:focus-visible {
 
 .model-item {
     display: grid;
-    grid-template-columns: 2.5fr 1fr 2.2fr 1fr 1fr 1fr 1.8fr;
+    grid-template-columns: 3fr 1.2fr 1.5fr 1fr 1fr 1fr 1.8fr;
     gap: var(--spacing-md);
     align-items: center;
     padding: var(--spacing-md);
@@ -344,6 +345,11 @@ textarea:focus-visible {
     transition: all 0.2s ease;
 }
 
+.model-item.multi-select-mode,
+.models-grid-layout.multi-select-mode .model-item {
+    grid-template-columns: 40px 3fr 1.2fr 1.5fr 1fr 1fr 1fr 1.8fr;
+}
+
 .model-item:hover {
     background: var(--bg-secondary);
     box-shadow: var(--shadow-sm);
@@ -351,7 +357,7 @@ textarea:focus-visible {
 
 .model-item-header {
     display: grid;
-    grid-template-columns: 2.5fr 1fr 2.2fr 1fr 1fr 1fr 1.8fr;
+    grid-template-columns: 3fr 1.2fr 1.5fr 1fr 1fr 1fr 1.8fr;
     gap: var(--spacing-md);
     align-items: center;
     padding: var(--spacing-sm) var(--spacing-md);
@@ -366,6 +372,107 @@ textarea:focus-visible {
     z-index: 1;
 }
 
+.models-grid-layout.multi-select-mode .model-item-header {
+    grid-template-columns: 40px 3fr 1.2fr 1.5fr 1fr 1fr 1fr 1.8fr;
+}
+
+/* 标题栏对齐设置 */
+.model-item-header > div:nth-child(3),  /* 服务商 */
+.model-item-header > div:nth-child(4),  /* 角色 */
+.model-item-header > div:nth-child(5),  /* SWE评分 */
+.model-item-header > div:nth-child(6),  /* 输入成本 */
+.model-item-header > div:nth-child(7) { /* 输出成本 */
+    text-align: center;
+}
+
+/* 操作列标题右对齐到按钮中间 */
+.model-item-header > div:nth-child(8) { /* 操作 */
+    text-align: center;
+    padding-right: 20px; /* 向右移动到按钮中间位置 */
+}
+
+/* Model Checkbox Cell */
+.model-checkbox-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 0;
+    overflow: hidden;
+    transition: width 0.2s ease;
+}
+
+.model-checkbox-cell.visible {
+    width: 40px;
+}
+
+.model-checkbox-cell.hidden {
+    width: 0;
+    padding: 0;
+    margin: 0;
+}
+
+.model-checkbox {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--primary-color);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.model-checkbox-cell.visible .model-checkbox {
+    opacity: 1;
+}
+
+/* Batch Operations */
+.batch-operations {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-md);
+    background: var(--accent-color);
+    color: white;
+    border-radius: var(--border-radius);
+    margin-bottom: var(--spacing-md);
+    box-shadow: var(--shadow-sm);
+}
+
+.batch-info {
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.batch-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.batch-actions .btn {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-size: 0.875rem;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border-radius: var(--border-radius);
+    transition: all 0.2s ease;
+}
+
+.batch-actions .btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: translateY(-1px);
+}
+
+.batch-actions .btn.btn-danger {
+    background: rgba(244, 67, 54, 0.8);
+    border-color: rgba(244, 67, 54, 0.5);
+}
+
+.batch-actions .btn.btn-danger:hover {
+    background: rgba(244, 67, 54, 0.9);
+    border-color: rgba(244, 67, 54, 0.7);
+}
+
 /* Model Item Cell Styles */
 .model-name-cell {
     font-weight: 600;
@@ -377,6 +484,7 @@ textarea:focus-visible {
 .model-provider-cell {
     color: var(--text-secondary);
     font-size: 0.875rem;
+    text-align: center;
 }
 
 .model-roles-cell {
@@ -384,7 +492,7 @@ textarea:focus-visible {
     flex-wrap: wrap;
     gap: 3px;
     align-items: center;
-    justify-content: flex-start;
+    justify-content: center;
     min-height: 24px;
     overflow: hidden;
 }
@@ -413,7 +521,7 @@ textarea:focus-visible {
 
 .model-tokens-cell,
 .model-cost-cell {
-    text-align: right;
+    text-align: center;
     font-size: 0.875rem;
     color: var(--text-secondary);
 }
@@ -561,6 +669,23 @@ textarea:focus-visible {
 
 .filter-group input[type="text"] {
     min-width: 200px;
+}
+
+/* Model Actions Group */
+.model-actions-group {
+    display: flex;
+    gap: var(--spacing-sm);
+    align-items: center;
+}
+
+.batch-action-btn {
+    transition: all 0.2s ease;
+}
+
+#toggle-multi-select-btn.active {
+    background-color: var(--accent-color);
+    color: white;
+    border-color: var(--accent-color);
 }
 
 /* Legacy table styles removed - now using CSS Grid layout */
@@ -752,6 +877,88 @@ textarea:focus-visible {
     outline: none;
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Input with button layout */
+.input-with-button {
+    display: flex;
+    gap: var(--spacing-sm);
+    align-items: stretch;
+}
+
+.input-with-button input {
+    flex: 1;
+    margin: 0;
+}
+
+.input-with-button .btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: auto;
+    padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.input-with-button .btn-sm {
+    font-size: 0.875rem;
+    padding: var(--spacing-sm) var(--spacing-md);
+}
+
+/* Test result styles */
+.test-result {
+    margin-top: var(--spacing-sm);
+}
+
+.test-result-content {
+    padding: var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    border: 1px solid;
+    font-size: 0.875rem;
+}
+
+.test-success {
+    background-color: #f0f9ff;
+    border-color: #22c55e;
+    color: #166534;
+}
+
+.test-error {
+    background-color: #fef2f2;
+    border-color: #ef4444;
+    color: #dc2626;
+}
+
+.test-loading {
+    padding: var(--spacing-sm);
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    text-align: center;
+}
+
+.test-message {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    font-weight: 500;
+}
+
+.test-icon {
+    font-size: 1rem;
+}
+
+.test-details {
+    margin-top: var(--spacing-xs);
+    padding-top: var(--spacing-xs);
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+    font-size: 0.75rem;
+    opacity: 0.8;
+}
+
+.detail-item {
+    margin-bottom: 2px;
 }
 
 .form-help {
@@ -1440,15 +1647,15 @@ textarea:focus-visible {
     font-weight: 500;
 }
 
-/* 浮动保存按钮 */
-.floating-save-btn {
+/* 浮动日志按钮 */
+.floating-logs-btn {
     position: fixed;
     bottom: 20px;
     right: 20px;
     z-index: 1000;
 }
 
-.floating-save-btn .btn {
+.floating-logs-btn .btn {
     box-shadow: var(--shadow-lg);
     border-radius: 50px;
     padding: var(--spacing-md) var(--spacing-lg);
@@ -1456,14 +1663,12 @@ textarea:focus-visible {
     transition: all 0.3s ease;
 }
 
-.floating-save-btn .btn:hover {
+.floating-logs-btn .btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
 }
 
-.floating-save-btn .btn.btn-warning {
-    animation: pulse 2s infinite;
-}
+
 
 @keyframes pulse {
     0% { transform: scale(1); }

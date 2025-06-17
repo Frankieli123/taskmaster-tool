@@ -90,7 +90,7 @@ export class TaskMasterTester {
             }
 
             // 测试 TaskMaster -> UI 转换
-            const backToUI = this.transformer.taskMasterToUi(taskMasterConfig);
+            const backToUI = await this.transformer.taskMasterToUi(taskMasterConfig);
             
             // 验证往返转换
             if (backToUI.providers.length !== providers.length || 
@@ -282,7 +282,7 @@ export class TaskMasterTester {
             }
 
             // 4. 转换回UI格式
-            const backToUI = this.transformer.taskMasterToUi(taskMasterConfig);
+            const backToUI = await this.transformer.taskMasterToUi(taskMasterConfig);
 
             // 5. 验证数据完整性
             const dataIntegrityCheck = this.checkDataIntegrity(

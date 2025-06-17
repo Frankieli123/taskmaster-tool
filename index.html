@@ -65,10 +65,24 @@
                                         <option value="">全部服务商</option>
                                     </select>
                                 </div>
-                                <button id="add-model-btn" class="btn btn-primary">
-                                    <span class="btn-icon" aria-hidden="true">➕</span>
-                                    添加模型
-                                </button>
+                                <div class="model-actions-group">
+                                    <button id="toggle-multi-select-btn" class="btn btn-secondary">
+                                        <span class="btn-icon">☑️</span>
+                                        多选
+                                    </button>
+                                    <button id="batch-import-btn" class="btn btn-primary batch-action-btn" style="display: none;">
+                                        <span class="btn-icon">📥</span>
+                                        批量导入
+                                    </button>
+                                    <button id="batch-delete-btn" class="btn btn-danger batch-action-btn" style="display: none;">
+                                        <span class="btn-icon">🗑️</span>
+                                        批量删除
+                                    </button>
+                                    <button id="add-model-btn" class="btn btn-primary">
+                                        <span class="btn-icon" aria-hidden="true">➕</span>
+                                        添加模型
+                                    </button>
+                                </div>
                             </div>
                         </div>
                         <div id="models-list" class="models-list-container" role="region" aria-label="AI模型配置列表">
@@ -110,23 +124,14 @@
 
                         <div class="config-actions" role="region" aria-labelledby="config-actions-heading">
                             <h3 id="config-actions-heading" class="sr-only">配置操作</h3>
+
                             <div class="action-card">
-                                <h4>导出配置</h4>
-                                <p>将当前设置保存到 Task Master 配置文件</p>
-                                <button id="export-config-btn" class="btn btn-success" aria-describedby="export-config-desc">
-                                    <span class="btn-icon" aria-hidden="true">💾</span>
-                                    导出到 Task Master
+                                <h4>自动加载配置</h4>
+                                <p>从当前TaskMaster项目自动加载配置</p>
+                                <button id="auto-load-config-btn" class="btn btn-primary">
+                                    <span class="btn-icon">🔄</span>
+                                    自动加载
                                 </button>
-                                <span id="export-config-desc" class="sr-only">将当前的API服务商和模型配置导出为TaskMaster格式的配置文件</span>
-                            </div>
-                            <div class="action-card">
-                                <h4>导入配置</h4>
-                                <p>加载现有的 Task Master 配置</p>
-                                <button id="import-config-btn" class="btn btn-secondary" aria-describedby="import-config-desc">
-                                    <span class="btn-icon" aria-hidden="true">📥</span>
-                                    从 Task Master 导入
-                                </button>
-                                <span id="import-config-desc" class="sr-only">从TaskMaster项目中导入现有的配置文件</span>
                             </div>
                             <div class="action-card">
                                 <h4>重置配置</h4>
@@ -137,53 +142,18 @@
                                 </button>
                                 <span id="reset-config-desc" class="sr-only">清除所有当前配置，恢复到默认状态</span>
                             </div>
-                            <div class="action-card">
-                                <h3>自动加载配置</h3>
-                                <p>从当前TaskMaster项目自动加载配置</p>
-                                <button id="auto-load-config-btn" class="btn btn-primary">
-                                    <span class="btn-icon">🔄</span>
-                                    自动加载
-                                </button>
-                            </div>
-                            <div class="action-card">
-                                <h3>API供应商测试</h3>
-                                <p>测试API Token和网络连通性</p>
-                                <button id="test-providers-btn" class="btn btn-secondary">
-                                    <span class="btn-icon">🔌</span>
-                                    测试所有供应商
-                                </button>
-                            </div>
-                            <div class="action-card">
-                                <h3>模型API测试</h3>
-                                <p>测试模型API对接功能</p>
-                                <button id="test-models-api-btn" class="btn btn-secondary">
-                                    <span class="btn-icon">🧠</span>
-                                    测试模型API
-                                </button>
-                            </div>
-                            <div class="action-card">
-                                <h3>TaskMaster集成测试</h3>
-                                <p>测试模型在TaskMaster中的工作状态</p>
-                                <button id="test-taskmaster-btn" class="btn btn-secondary">
-                                    <span class="btn-icon">⚙️</span>
-                                    测试TaskMaster集成
-                                </button>
-                            </div>
+
                         </div>
                     </div>
                 </div>
             </div>
         </main>
 
-        <!-- 保存按钮固定在右下角 -->
-        <div class="floating-save-btn">
-            <button id="view-logs-btn" class="btn btn-secondary" style="margin-right: 10px;">
+        <!-- 查看日志按钮 -->
+        <div class="floating-logs-btn">
+            <button id="view-logs-btn" class="btn btn-secondary">
                 <span class="btn-icon">📋</span>
                 查看日志
-            </button>
-            <button id="save-btn" class="btn btn-primary">
-                <span class="btn-icon">💾</span>
-                保存更改
             </button>
         </div>
     </div>

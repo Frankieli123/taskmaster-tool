@@ -10,41 +10,30 @@ export class ProviderValidator {
         // 创建专用的API测试网络客户端
         this.networkClient = NetworkClient.createAPITestClient();
 
-        // Known provider patterns and requirements
+        // 简化的服务商配置 - 移除所有端点和API密钥模式验证
         this.providerPatterns = {
             'openai': {
-                endpointPattern: /^https:\/\/api\.openai\.com$/,
-                apiKeyPattern: /^sk-[a-zA-Z0-9]{48,}$/,
                 requiredFields: ['name', 'endpoint', 'apiKey', 'type']
             },
             'anthropic': {
-                endpointPattern: /^https:\/\/api\.anthropic\.com$/,
-                apiKeyPattern: /^sk-ant-[a-zA-Z0-9\-_]{95,}$/,
                 requiredFields: ['name', 'endpoint', 'apiKey', 'type']
             },
             'google': {
-                endpointPattern: /^https:\/\/generativelanguage\.googleapis\.com$/,
-                apiKeyPattern: /^[a-zA-Z0-9\-_]{39}$/,
                 requiredFields: ['name', 'endpoint', 'apiKey', 'type']
             },
             'polo': {
-                endpointPattern: /^https:\/\/api\.polo\.ai$/,
-                apiKeyPattern: /^[a-zA-Z0-9\-_]{20,}$/,
+                requiredFields: ['name', 'endpoint', 'apiKey', 'type']
+            },
+            'poloai': {
                 requiredFields: ['name', 'endpoint', 'apiKey', 'type']
             },
             'foapi': {
-                endpointPattern: /^https:\/\/v2\.voct\.top$/,
-                apiKeyPattern: /^fo-[a-zA-Z0-9\-_]{20,}$/,
                 requiredFields: ['name', 'endpoint', 'apiKey', 'type']
             },
             'openrouter': {
-                endpointPattern: /^https:\/\/openrouter\.ai\/api$/,
-                apiKeyPattern: /^sk-or-[a-zA-Z0-9\-_]{20,}$/,
                 requiredFields: ['name', 'endpoint', 'apiKey', 'type']
             },
             'custom': {
-                endpointPattern: /^https?:\/\/.+/,
-                apiKeyPattern: /.+/,
                 requiredFields: ['name', 'endpoint', 'type']
             }
         };
@@ -76,26 +65,7 @@ export class ProviderValidator {
             return { isValid: false, errors };
         }
 
-        // Name validation
-        if (provider.name.length < 2 || provider.name.length > 50) {
-            errors.push('服务商名称必须在2到50个字符之间');
-        }
-
-        if (!/^[a-zA-Z0-9\s\-_.]+$/.test(provider.name)) {
-            errors.push('服务商名称包含无效字符');
-        }
-
-        // Endpoint validation
-        const endpointValidation = this.validateEndpoint(provider.endpoint);
-        if (!endpointValidation.isValid) {
-            errors.push(...endpointValidation.errors);
-        }
-
-        // Type validation
-        const validTypes = ['openai', 'anthropic', 'google', 'polo', 'poloai', 'foapi', 'aoapi', 'perplexity', 'xai', 'openrouter', 'ollama', 'whi', 'custom'];
-        if (!validTypes.includes(provider.type)) {
-            errors.push(`服务商类型必须是以下之一: ${validTypes.join(', ')}`);
-        }
+        // 移除所有格式验证，不再检查服务商名称、端点和类型格式
 
         // API Key validation (if provided)
         if (provider.apiKey) {
@@ -123,81 +93,14 @@ export class ProviderValidator {
     }
 
     /**
-     * Validate endpoint URL
-     * @param {string} endpoint - Endpoint URL
-     * @returns {Object} Validation result
+     * 已移除端点和API密钥格式验证
      */
-    validateEndpoint(endpoint) {
-        const errors = [];
-
-        try {
-            const url = new URL(endpoint);
-            
-            // Must be HTTPS for security (except localhost for development)
-            if (url.protocol !== 'https:' && !url.hostname.includes('localhost') && url.hostname !== '127.0.0.1') {
-                errors.push('端点必须使用HTTPS以确保安全');
-            }
-
-            // Check for valid hostname
-            if (!url.hostname || url.hostname.length < 3) {
-                errors.push('端点URL中的主机名无效');
-            }
-
-            // Check for suspicious patterns
-            if (url.hostname.includes('..') || url.pathname.includes('..')) {
-                errors.push('端点URL包含可疑模式');
-            }
-
-        } catch (error) {
-            errors.push('端点URL格式无效');
-        }
-
-        return {
-            isValid: errors.length === 0,
-            errors: errors
-        };
+    validateEndpoint(_endpoint) {
+        return { isValid: true, errors: [] };
     }
 
-    /**
-     * Validate API key format
-     * @param {string} apiKey - API key
-     * @param {string} providerType - Provider type
-     * @returns {Object} Validation result
-     */
-    validateApiKey(apiKey, providerType) {
-        const errors = [];
-
-        if (!apiKey || typeof apiKey !== 'string') {
-            errors.push('API密钥必须是非空字符串');
-            return { isValid: false, errors };
-        }
-
-        // Basic length check
-        if (apiKey.length < 10) {
-            errors.push('API密钥太短');
-        }
-
-        if (apiKey.length > 200) {
-            errors.push('API密钥太长');
-        }
-
-        // Check for whitespace
-        if (apiKey.trim() !== apiKey) {
-            errors.push('API密钥不应包含前导或尾随空格');
-        }
-
-        // Type-specific validation
-        if (providerType && this.providerPatterns[providerType]) {
-            const pattern = this.providerPatterns[providerType].apiKeyPattern;
-            if (pattern && !pattern.test(apiKey)) {
-                errors.push(`${providerType}服务商的API密钥格式无效`);
-            }
-        }
-
-        return {
-            isValid: errors.length === 0,
-            errors: errors
-        };
+    validateApiKey(_apiKey, _providerType) {
+        return { isValid: true, errors: [] };
     }
 
     /**
@@ -222,12 +125,7 @@ export class ProviderValidator {
             }
         }
 
-        // Validate endpoint pattern for known providers
-        if (type !== 'custom' && pattern.endpointPattern && provider.endpoint) {
-            if (!pattern.endpointPattern.test(provider.endpoint)) {
-                errors.push(`端点URL与${type}服务商的预期模式不匹配`);
-            }
-        }
+        // 移除端点URL模式匹配验证 - 允许用户使用任意端点
 
         return {
             isValid: errors.length === 0,
@@ -321,6 +219,7 @@ export class ProviderValidator {
             switch (provider.type) {
                 case 'openai':
                 case 'foapi':
+                case 'poloai':
                     testResult = await this.testOpenAICompatibleAPI(provider);
                     break;
                 case 'anthropic':
@@ -641,39 +540,10 @@ export class ProviderValidator {
     }
 
     /**
-     * Get provider suggestions based on endpoint
-     * @param {string} endpoint - Endpoint URL
-     * @returns {Array} Array of suggested provider types
+     * 已移除基于端点的服务商类型建议功能
      */
-    suggestProviderType(endpoint) {
-        const suggestions = [];
-
-        for (const [type, pattern] of Object.entries(this.providerPatterns)) {
-            if (type !== 'custom' && pattern.endpointPattern && pattern.endpointPattern.test(endpoint)) {
-                suggestions.push({
-                    type: type,
-                    confidence: 'high',
-                    reason: `Endpoint matches ${type} pattern`
-                });
-            }
-        }
-
-        // If no exact matches, suggest based on domain patterns
-        if (suggestions.length === 0) {
-            const url = new URL(endpoint);
-            const hostname = url.hostname.toLowerCase();
-
-            if (hostname.includes('openai')) {
-                suggestions.push({ type: 'openai', confidence: 'medium', reason: '域名包含"openai"' });
-            } else if (hostname.includes('anthropic')) {
-                suggestions.push({ type: 'anthropic', confidence: 'medium', reason: '域名包含"anthropic"' });
-            } else if (hostname.includes('google')) {
-                suggestions.push({ type: 'google', confidence: 'medium', reason: '域名包含"google"' });
-            } else {
-                suggestions.push({ type: 'custom', confidence: 'low', reason: '未知端点模式' });
-            }
-        }
-
-        return suggestions;
+    suggestProviderType(_endpoint) {
+        // 不再基于端点URL进行服务商类型建议
+        return [];
     }
 }

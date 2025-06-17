@@ -286,7 +286,7 @@ class ConfigFileSystemTester {
           this.log('UI到TaskMaster转换成功');
           
           // 测试TaskMaster到UI转换
-          const backToUI = transformer.taskMasterToUi(taskMasterConfig);
+          const backToUI = await transformer.taskMasterToUi(taskMasterConfig);
           this.log('TaskMaster到UI转换成功');
           
           this.endTest('pass', '配置格式转换功能正常');

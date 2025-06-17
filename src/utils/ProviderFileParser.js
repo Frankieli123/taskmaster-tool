@@ -93,25 +93,36 @@ export class ProviderFileParser {
      * @returns {string} 默认端点
      */
     extractDefaultEndpoint(content) {
+        let endpoint = '';
+
         // 查找 baseURL || 'https://...' 模式
         const endpointMatch = content.match(/baseURL\s*\|\|\s*['"`](https?:\/\/[^'"`]+)['"`]/);
         if (endpointMatch) {
-            return endpointMatch[1];
+            endpoint = endpointMatch[1];
         }
-        
+
         // 查找 effectiveBaseURL = baseURL || 'https://...' 模式
-        const effectiveMatch = content.match(/effectiveBaseURL\s*=\s*baseURL\s*\|\|\s*['"`](https?:\/\/[^'"`]+)['"`]/);
-        if (effectiveMatch) {
-            return effectiveMatch[1];
+        if (!endpoint) {
+            const effectiveMatch = content.match(/effectiveBaseURL\s*=\s*baseURL\s*\|\|\s*['"`](https?:\/\/[^'"`]+)['"`]/);
+            if (effectiveMatch) {
+                endpoint = effectiveMatch[1];
+            }
         }
-        
+
         // 查找其他可能的端点模式
-        const urlMatch = content.match(/['"`](https?:\/\/[a-zA-Z0-9.-]+(?::\d+)?(?:\/[^'"`]*)?)['"`]/);
-        if (urlMatch) {
-            return urlMatch[1];
+        if (!endpoint) {
+            const urlMatch = content.match(/['"`](https?:\/\/[a-zA-Z0-9.-]+(?::\d+)?(?:\/[^'"`]*)?)['"`]/);
+            if (urlMatch) {
+                endpoint = urlMatch[1];
+            }
         }
-        
-        return '';
+
+        // 去掉 /v1 后缀，因为这是在API调用时自动添加的
+        if (endpoint && endpoint.endsWith('/v1')) {
+            endpoint = endpoint.slice(0, -3);
+        }
+
+        return endpoint;
     }
 
     /**

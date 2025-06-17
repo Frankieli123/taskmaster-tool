@@ -75,7 +75,7 @@ export class SaveConfig {
             }
 
             // Transform to UI tool format using ConfigTransformer
-            const { providers, models } = this.transformer.taskMasterToUi(taskMasterConfig);
+            const { providers, models } = await this.transformer.taskMasterToUi(taskMasterConfig);
 
             // Validate UI configuration
             const validation = this.transformer.validateUiConfig(providers, models);
@@ -231,7 +231,7 @@ export class SaveConfig {
             Logger.info('✅ 成功读取TaskMaster配置', { config: taskMasterConfig });
 
             // 转换为UI格式
-            const { providers, models } = this.transformer.taskMasterToUi(taskMasterConfig);
+            const { providers, models } = await this.transformer.taskMasterToUi(taskMasterConfig);
 
             Logger.info(`📊 转换结果: ${providers.length} 个供应商, ${models.length} 个模型`);
 

@@ -6,21 +6,31 @@
 import { NetworkClient } from '../utils/NetworkClient.js';
 import { UINotification } from './UINotification.js';
 import { Logger } from '../utils/Logger.js';
+import { TaskMasterFileManager } from '../utils/TaskMasterFileManager.js';
 
 export class ModelConfig {
-    constructor(configManager) {
+    constructor(configManager, saveConfig) {
         this.configManager = configManager;
+        this.saveConfig = saveConfig;
         this.models = [];
         this.providers = [];
         this.currentProviderFilter = null; // 当前过滤的服务商ID
 
         // 创建专用的API测试网络客户端
         this.networkClient = NetworkClient.createAPITestClient();
+
+        // 初始化TaskMaster文件管理器
+        this.taskMasterFileManager = null;
+        this.taskMasterModelsCache = new Map(); // 缓存TaskMaster中的模型状态
+        this.selectedModels = new Set(); // 选中的模型ID集合
+        this.isMultiSelectMode = false; // 多选模式状态
     }
 
     initialize() {
         this.bindEvents();
         this.bindProviderFilter();
+        // 初始化多选按钮状态
+        setTimeout(() => this.updateMultiSelectButton(), 100);
     }
 
     bindEvents() {
@@ -29,9 +39,12 @@ export class ModelConfig {
             if (e.target.matches('.edit-model-btn')) {
                 const modelId = e.target.dataset.modelId;
                 this.editModel(modelId);
-            } else if (e.target.matches('.delete-model-btn')) {
+            } else if (e.target.matches('.import-model-btn')) {
                 const modelId = e.target.dataset.modelId;
-                this.deleteModel(modelId);
+                this.importModelToTaskMaster(modelId);
+            } else if (e.target.matches('.delete-from-taskmaster-btn')) {
+                const modelId = e.target.dataset.modelId;
+                this.deleteModelFromTaskMaster(modelId);
             } else if (e.target.matches('.test-model-api-btn')) {
                 const modelId = e.target.dataset.modelId;
                 this.testModelAPI(modelId);
@@ -42,16 +55,74 @@ export class ModelConfig {
                 this.showAddModelModal();
             }
         });
+
+        // Event delegation for checkboxes
+        document.getElementById('models-list').addEventListener('change', (e) => {
+            if (e.target.matches('.model-checkbox') && e.target.dataset.modelId) {
+                const modelId = e.target.dataset.modelId;
+                this.toggleModelSelection(modelId);
+            }
+        });
+
+        // 绑定多选和批量操作按钮事件（在document上）
+        document.addEventListener('click', (e) => {
+            if (e.target.matches('#toggle-multi-select-btn')) {
+                this.toggleMultiSelectMode();
+            } else if (e.target.matches('#batch-import-btn')) {
+                this.batchImportModels();
+            } else if (e.target.matches('#batch-delete-btn')) {
+                this.batchDeleteModels();
+            } else if (e.target.matches('.clear-selection-btn')) {
+                this.clearSelection();
+            }
+        });
     }
 
     async loadModels() {
         try {
             this.models = await this.configManager.getModels();
             this.providers = await this.configManager.getProviders();
+
+            // 更新模型显示名称
+            await this.updateModelDisplayNames();
+
+            // 初始化TaskMasterFileManager
+            if (!this.taskMasterFileManager && this.saveConfig) {
+                this.taskMasterFileManager = new TaskMasterFileManager(this.configManager, this.saveConfig);
+            }
+
+            // 加载TaskMaster模型状态
+            await this.loadTaskMasterModelsStatus();
+
             this.updateProviderFilter();
             this.renderModels();
         } catch (error) {
-            // Failed to load models
+            Logger.error('加载模型失败', { error: error.message }, error);
+        }
+    }
+
+    /**
+     * 更新模型显示名称
+     */
+    async updateModelDisplayNames() {
+        if (!this.saveConfig || !this.saveConfig.transformer) {
+            return;
+        }
+
+        const transformer = this.saveConfig.transformer;
+
+        for (const model of this.models) {
+            try {
+                const displayName = await transformer.getModelDisplayName(model.modelId);
+                if (displayName !== model.name) {
+                    model.name = displayName;
+                    // 更新到配置管理器
+                    await this.configManager.updateModel(model);
+                }
+            } catch (error) {
+                // 静默处理错误
+                // console.warn(`Failed to update display name for model ${model.modelId}:`, error);
+            }
         }
     }
 
@@ -75,8 +146,11 @@ export class ModelConfig {
 
         // 渲染网格布局
         container.innerHTML = `
-            <div class="models-grid-layout">
+            <div class="models-grid-layout ${this.isMultiSelectMode ? 'multi-select-mode' : ''}">
                 <div class="model-item-header">
+                    <div class="model-checkbox-cell ${this.isMultiSelectMode ? 'visible' : 'hidden'}">
+                        <input type="checkbox" id="select-all-models" class="model-checkbox" title="全选/取消全选">
+                    </div>
                     <div>模型名称</div>
                     <div>服务商</div>
                     <div>角色</div>
@@ -88,6 +162,12 @@ export class ModelConfig {
                 ${this.renderModelItems()}
             </div>
         `;
+
+        // 绑定全选复选框事件
+        this.bindSelectAllEvent();
+
+        // 更新全选复选框状态
+        this.updateSelectAllState();
     }
 
     /**
@@ -114,8 +194,25 @@ export class ModelConfig {
             return `<span class="role-badge role-${role}">${roleText}</span>`;
         }).join('') || '';
 
+        // 检查模型是否在TaskMaster中存在
+        const existsInTaskMaster = this.checkModelExistsInTaskMaster(model);
+
+        // 根据存在状态渲染不同的按钮
+        const taskMasterButton = existsInTaskMaster
+            ? `<button class="btn btn-icon-only delete-from-taskmaster-btn" data-model-id="${model.id}" title="从TaskMaster删除">
+                🗑️
+               </button>`
+            : `<button class="btn btn-icon-only import-model-btn" data-model-id="${model.id}" title="导入到TaskMaster">
+                📥
+               </button>`;
+
+        const isSelected = this.selectedModels.has(model.id);
+
         return `
             <div class="model-item" data-model-id="${model.id}">
+                <div class="model-checkbox-cell ${this.isMultiSelectMode ? 'visible' : 'hidden'}">
+                    <input type="checkbox" class="model-checkbox" data-model-id="${model.id}" ${isSelected ? 'checked' : ''}>
+                </div>
                 <div class="model-name-cell">${model.name}</div>
                 <div class="model-provider-cell">${providerName}</div>
                 <div class="model-roles-cell">${rolesBadges}</div>
@@ -135,13 +232,13 @@ export class ModelConfig {
                     <button class="btn btn-icon-only edit-model-btn" data-model-id="${model.id}" title="编辑模型">
                         ✏️
                     </button>
-                    <button class="btn btn-icon-only delete-model-btn" data-model-id="${model.id}" title="删除模型">
-                        🗑️
-                    </button>
+                    ${taskMasterButton}
                 </div>
             </div>
         `;
     }
+
+
 
     /**
      * 获取筛选后的模型列表
@@ -192,6 +289,112 @@ export class ModelConfig {
 
 
     /**
+     * 绑定全选复选框事件
+     */
+    bindSelectAllEvent() {
+        const selectAllCheckbox = document.getElementById('select-all-models');
+        if (selectAllCheckbox) {
+            selectAllCheckbox.addEventListener('change', (e) => {
+                this.toggleSelectAll(e.target.checked);
+            });
+        }
+    }
+
+    /**
+     * 切换模型选择状态
+     */
+    toggleModelSelection(modelId) {
+        if (this.selectedModels.has(modelId)) {
+            this.selectedModels.delete(modelId);
+        } else {
+            this.selectedModels.add(modelId);
+        }
+        this.updateSelectAllState();
+        this.renderModels(); // 重新渲染以更新批量操作区域
+    }
+
+    /**
+     * 全选/取消全选
+     */
+    toggleSelectAll(checked) {
+        const filteredModels = this.getFilteredModels();
+        if (checked) {
+            filteredModels.forEach(model => this.selectedModels.add(model.id));
+        } else {
+            filteredModels.forEach(model => this.selectedModels.delete(model.id));
+        }
+        this.renderModels();
+    }
+
+    /**
+     * 更新全选复选框状态
+     */
+    updateSelectAllState() {
+        const selectAllCheckbox = document.getElementById('select-all-models');
+        if (!selectAllCheckbox) return;
+
+        const filteredModels = this.getFilteredModels();
+        const selectedFilteredModels = filteredModels.filter(model => this.selectedModels.has(model.id));
+
+        if (selectedFilteredModels.length === 0) {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = false;
+        } else if (selectedFilteredModels.length === filteredModels.length) {
+            selectAllCheckbox.checked = true;
+            selectAllCheckbox.indeterminate = false;
+        } else {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = true;
+        }
+    }
+
+    /**
+     * 清除选择
+     */
+    clearSelection() {
+        this.selectedModels.clear();
+        this.renderModels();
+    }
+
+    /**
+     * 切换多选模式
+     */
+    toggleMultiSelectMode() {
+        this.isMultiSelectMode = !this.isMultiSelectMode;
+        if (!this.isMultiSelectMode) {
+            // 退出多选模式时清除所有选择
+            this.selectedModels.clear();
+        }
+        this.renderModels();
+        this.updateMultiSelectButton();
+    }
+
+    /**
+     * 更新多选按钮状态
+     */
+    updateMultiSelectButton() {
+        const multiSelectBtn = document.getElementById('toggle-multi-select-btn');
+        const batchImportBtn = document.getElementById('batch-import-btn');
+        const batchDeleteBtn = document.getElementById('batch-delete-btn');
+
+        if (multiSelectBtn) {
+            if (this.isMultiSelectMode) {
+                multiSelectBtn.innerHTML = '<span class="btn-icon">✖️</span>退出多选';
+                multiSelectBtn.classList.add('active');
+                // 显示批量操作按钮
+                if (batchImportBtn) batchImportBtn.style.display = 'inline-flex';
+                if (batchDeleteBtn) batchDeleteBtn.style.display = 'inline-flex';
+            } else {
+                multiSelectBtn.innerHTML = '<span class="btn-icon">☑️</span>多选';
+                multiSelectBtn.classList.remove('active');
+                // 隐藏批量操作按钮
+                if (batchImportBtn) batchImportBtn.style.display = 'none';
+                if (batchDeleteBtn) batchDeleteBtn.style.display = 'none';
+            }
+        }
+    }
+
+    /**
      * 格式化评分，保留一位小数
      */
     formatScore(score) {
@@ -206,6 +409,465 @@ export class ModelConfig {
         if (score >= 50) return '★★☆';
         if (score >= 30) return '★☆☆';
         return '☆☆☆';
+    }
+
+    /**
+     * 加载TaskMaster项目中的模型状态
+     */
+    async loadTaskMasterModelsStatus() {
+        try {
+            if (!this.saveConfig || !this.saveConfig.directoryHandleCache.has('taskmaster-project')) {
+                // TaskMaster项目未加载
+                this.taskMasterModelsCache.clear();
+                return;
+            }
+
+            const projectDirHandle = this.saveConfig.directoryHandleCache.get('taskmaster-project');
+            const supportedModelsContent = await this.saveConfig.readFileFromDirectory(
+                projectDirHandle,
+                'scripts/modules/supported-models.json'
+            );
+
+            if (supportedModelsContent) {
+                const supportedModels = JSON.parse(supportedModelsContent);
+
+                // 清空缓存并重新填充
+                this.taskMasterModelsCache.clear();
+
+                // 遍历所有供应商和模型
+                for (const [providerKey, models] of Object.entries(supportedModels)) {
+                    if (Array.isArray(models)) {
+                        models.forEach(model => {
+                            this.taskMasterModelsCache.set(model.id, {
+                                provider: providerKey,
+                                exists: true
+                            });
+                        });
+                    }
+                }
+            }
+        } catch (error) {
+            Logger.warn('加载TaskMaster模型状态失败', { error: error.message });
+            this.taskMasterModelsCache.clear();
+        }
+    }
+
+    /**
+     * 检查模型是否在TaskMaster中存在
+     */
+    checkModelExistsInTaskMaster(model) {
+        if (!model || !model.modelId) return false;
+
+        // 从缓存中检查
+        return this.taskMasterModelsCache.has(model.modelId);
+    }
+
+    /**
+     * 批量导入模型到TaskMaster
+     */
+    async batchImportModels() {
+        const selectedModelIds = Array.from(this.selectedModels);
+        if (selectedModelIds.length === 0) {
+            UINotification.warning('请先选择要导入的模型');
+            return;
+        }
+
+        const confirmed = await UINotification.confirm(
+            `确定要导入 ${selectedModelIds.length} 个模型到TaskMaster吗？`,
+            {
+                title: '批量导入模型',
+                confirmText: '导入',
+                cancelText: '取消'
+            }
+        );
+
+        if (!confirmed) {
+            Logger.info('用户取消批量导入模型操作', {
+                selectedCount: selectedModelIds.length,
+                selectedModelIds: selectedModelIds
+            });
+            return;
+        }
+
+        // 记录批量导入开始
+        Logger.info('开始批量导入模型', {
+            totalCount: selectedModelIds.length,
+            selectedModelIds: selectedModelIds,
+            operation: 'batch_import_models'
+        });
+
+        let successCount = 0;
+        let failCount = 0;
+        const failedModels = [];
+
+        UINotification.info(`开始批量导入 ${selectedModelIds.length} 个模型...`);
+
+        for (const modelId of selectedModelIds) {
+            try {
+                await this.importModelToTaskMaster(modelId, true); // 静默模式
+                successCount++;
+            } catch (error) {
+                failCount++;
+                const model = this.models.find(m => m.id === modelId);
+                failedModels.push({
+                    modelId: modelId,
+                    modelName: model?.name || 'Unknown',
+                    error: error.message
+                });
+            }
+        }
+
+        // 记录批量导入结果
+        Logger.info('批量导入模型完成', {
+            totalCount: selectedModelIds.length,
+            successCount: successCount,
+            failCount: failCount,
+            failedModels: failedModels,
+            operation: 'batch_import_models_complete'
+        });
+
+        // 显示结果
+        if (failCount === 0) {
+            UINotification.success(`成功导入 ${successCount} 个模型`);
+        } else {
+            UINotification.warning(`导入完成：成功 ${successCount} 个，失败 ${failCount} 个`, {
+                duration: 8000
+            });
+        }
+
+        // 清除选择并重新渲染
+        this.clearSelection();
+    }
+
+    /**
+     * 批量删除模型
+     */
+    async batchDeleteModels() {
+        const selectedModelIds = Array.from(this.selectedModels);
+        if (selectedModelIds.length === 0) {
+            UINotification.warning('请先选择要删除的模型');
+            return;
+        }
+
+        const confirmed = await UINotification.confirm(
+            `确定要从TaskMaster项目中删除 ${selectedModelIds.length} 个模型吗？此操作无法撤销。`,
+            {
+                title: '批量删除模型',
+                confirmText: '删除',
+                cancelText: '取消'
+            }
+        );
+
+        if (!confirmed) {
+            Logger.info('用户取消批量删除模型操作', {
+                selectedCount: selectedModelIds.length,
+                selectedModelIds: selectedModelIds
+            });
+            return;
+        }
+
+        // 记录批量删除开始
+        Logger.info('开始批量删除模型', {
+            totalCount: selectedModelIds.length,
+            selectedModelIds: selectedModelIds,
+            operation: 'batch_delete_models'
+        });
+
+        let successCount = 0;
+        let failCount = 0;
+        const failedModels = [];
+
+        UINotification.info(`开始批量删除 ${selectedModelIds.length} 个模型...`);
+
+        for (const modelId of selectedModelIds) {
+            try {
+                await this.deleteModelFromTaskMaster(modelId, true); // 静默模式
+                successCount++;
+            } catch (error) {
+                failCount++;
+                const model = this.models.find(m => m.id === modelId);
+                failedModels.push({
+                    modelId: modelId,
+                    modelName: model?.name || 'Unknown',
+                    error: error.message
+                });
+            }
+        }
+
+        // 记录批量删除结果
+        Logger.info('批量删除模型完成', {
+            totalCount: selectedModelIds.length,
+            successCount: successCount,
+            failCount: failCount,
+            failedModels: failedModels,
+            operation: 'batch_delete_models_complete'
+        });
+
+        // 显示结果
+        if (failCount === 0) {
+            UINotification.success(`成功删除 ${successCount} 个模型`);
+        } else {
+            UINotification.warning(`删除完成：成功 ${successCount} 个，失败 ${failCount} 个`, {
+                duration: 8000
+            });
+        }
+
+        // 清除选择并重新渲染
+        this.clearSelection();
+    }
+
+    /**
+     * 导入模型到TaskMaster项目
+     */
+    async importModelToTaskMaster(modelId, silent = false) {
+        const model = this.models.find(m => m.id === modelId);
+        if (!model) {
+            if (!silent) UINotification.error('模型未找到');
+            throw new Error('模型未找到');
+        }
+
+        const provider = this.providers.find(p => p.id === model.providerId);
+        if (!provider) {
+            if (!silent) UINotification.error('未找到对应的服务商');
+            throw new Error('未找到对应的服务商');
+        }
+
+        if (!this.taskMasterFileManager) {
+            if (!silent) UINotification.error('TaskMaster文件管理器未初始化');
+            throw new Error('TaskMaster文件管理器未初始化');
+        }
+
+        // 记录导入开始
+        Logger.info('开始导入模型到TaskMaster项目', {
+            modelId: model.modelId,
+            modelName: model.name,
+            provider: provider.name,
+            silent: silent,
+            sweScore: model.sweScore,
+            maxTokens: model.maxTokens,
+            allowedRoles: model.allowedRoles
+        });
+
+        try {
+            // 显示导入状态
+            const importBtn = document.querySelector(`[data-model-id="${modelId}"].import-model-btn`);
+            if (importBtn) {
+                importBtn.innerHTML = '⏳';
+                importBtn.disabled = true;
+            }
+
+            // 准备模型配置
+            const modelConfig = {
+                sweScore: model.sweScore || 0,
+                costPer1MTokens: model.costPer1MTokens || { input: 0, output: 0 },
+                allowedRoles: model.allowedRoles || ["main", "fallback", "research"],
+                maxTokens: model.maxTokens || 128000
+            };
+
+            // 提取原始模型ID（去掉供应商前缀）
+            const providerPrefix = provider.name.toLowerCase() + '-';
+            const originalModelId = model.modelId.startsWith(providerPrefix)
+                ? model.modelId.substring(providerPrefix.length)
+                : model.modelId;
+
+            // 调用TaskMasterFileManager添加模型
+            const result = await this.taskMasterFileManager.addProviderModel(
+                provider.name.toLowerCase(),
+                originalModelId,
+                modelConfig
+            );
+
+            if (result.success) {
+                // 更新缓存
+                this.taskMasterModelsCache.set(model.modelId, {
+                    provider: provider.name.toLowerCase(),
+                    exists: true
+                });
+
+                // 记录导入成功
+                Logger.info('成功导入模型到TaskMaster项目', {
+                    modelId: model.modelId,
+                    modelName: model.name,
+                    provider: provider.name,
+                    operation: 'import_model_to_taskmaster',
+                    originalModelId: originalModelId,
+                    modelConfig: modelConfig
+                });
+
+                // 重新渲染模型列表以更新按钮状态
+                if (!silent) this.renderModels();
+
+                if (!silent) UINotification.success(`模型 ${model.name} 已成功导入到TaskMaster`);
+            } else {
+                throw new Error('导入失败');
+            }
+
+        } catch (error) {
+            Logger.error('导入模型到TaskMaster项目失败', {
+                modelId: model.modelId,
+                modelName: model.name,
+                provider: provider.name,
+                error: error.message,
+                operation: 'import_model_to_taskmaster'
+            }, error);
+
+            if (!silent) {
+                UINotification.error(`导入模型失败: ${error.message}`, {
+                    title: '导入失败',
+                    duration: 5000
+                });
+            }
+            throw error; // 重新抛出错误供批量操作处理
+        } finally {
+            // 恢复按钮状态
+            const importBtn = document.querySelector(`[data-model-id="${modelId}"].import-model-btn`);
+            if (importBtn) {
+                importBtn.innerHTML = '📥';
+                importBtn.disabled = false;
+            }
+        }
+    }
+
+    /**
+     * 从TaskMaster项目删除模型
+     */
+    async deleteModelFromTaskMaster(modelId, silent = false) {
+        const model = this.models.find(m => m.id === modelId);
+        if (!model) {
+            if (!silent) UINotification.error('模型未找到');
+            throw new Error('模型未找到');
+        }
+
+        const provider = this.providers.find(p => p.id === model.providerId);
+        if (!provider) {
+            if (!silent) UINotification.error('未找到对应的服务商');
+            throw new Error('未找到对应的服务商');
+        }
+
+        // 静默模式下跳过确认
+        if (!silent) {
+            const confirmed = await UINotification.confirm(
+                `确定要从TaskMaster项目中删除模型 "${model.name}" 吗？此操作无法撤销。`,
+                {
+                    title: '删除TaskMaster模型',
+                    confirmText: '删除',
+                    cancelText: '取消'
+                }
+            );
+
+            if (!confirmed) {
+                Logger.info('用户取消删除模型操作', {
+                    modelId: model.modelId,
+                    modelName: model.name,
+                    provider: provider.name
+                });
+                return;
+            }
+        }
+
+        // 记录删除开始
+        Logger.info('开始从TaskMaster项目删除模型', {
+            modelId: model.modelId,
+            modelName: model.name,
+            provider: provider.name,
+            silent: silent
+        });
+
+        try {
+            // 显示删除状态
+            const deleteBtn = document.querySelector(`[data-model-id="${modelId}"].delete-from-taskmaster-btn`);
+            if (deleteBtn) {
+                deleteBtn.innerHTML = '⏳';
+                deleteBtn.disabled = true;
+            }
+
+            // 从TaskMaster的supported-models.json中删除模型
+            await this.removeModelFromTaskMaster(model, provider);
+
+            // 更新缓存
+            this.taskMasterModelsCache.delete(model.modelId);
+
+            // 记录删除成功
+            Logger.info('成功从TaskMaster项目删除模型', {
+                modelId: model.modelId,
+                modelName: model.name,
+                provider: provider.name,
+                operation: 'delete_model_from_taskmaster'
+            });
+
+            // 重新渲染模型列表以更新按钮状态
+            if (!silent) this.renderModels();
+
+            if (!silent) UINotification.success(`模型 ${model.name} 已从TaskMaster项目中删除`);
+
+        } catch (error) {
+            Logger.error('从TaskMaster删除模型失败', {
+                modelId: model.modelId,
+                modelName: model.name,
+                provider: provider.name,
+                error: error.message,
+                operation: 'delete_model_from_taskmaster'
+            }, error);
+            if (!silent) {
+                UINotification.error(`删除模型失败: ${error.message}`, {
+                    title: '删除失败',
+                    duration: 5000
+                });
+            }
+            throw error; // 重新抛出错误供批量操作处理
+        } finally {
+            // 恢复按钮状态
+            const deleteBtn = document.querySelector(`[data-model-id="${modelId}"].delete-from-taskmaster-btn`);
+            if (deleteBtn) {
+                deleteBtn.innerHTML = '🗑️';
+                deleteBtn.disabled = false;
+            }
+        }
+    }
+
+    /**
+     * 从TaskMaster的supported-models.json中删除指定模型
+     */
+    async removeModelFromTaskMaster(model, provider) {
+        const supportedModelsPath = 'scripts/modules/supported-models.json';
+        const projectDirHandle = this.saveConfig.directoryHandleCache.get('taskmaster-project');
+
+        if (!projectDirHandle) {
+            throw new Error('TaskMaster项目目录不可用');
+        }
+
+        // 读取现有的supported-models.json
+        const existingContent = await this.saveConfig.readFileFromDirectory(
+            projectDirHandle,
+            supportedModelsPath
+        );
+
+        if (!existingContent) {
+            throw new Error('supported-models.json文件不存在');
+        }
+
+        const supportedModels = JSON.parse(existingContent);
+        const providerKey = provider.name.toLowerCase();
+
+        if (!supportedModels[providerKey] || !Array.isArray(supportedModels[providerKey])) {
+            throw new Error(`供应商 ${providerKey} 不存在于supported-models.json中`);
+        }
+
+        // 查找并删除模型
+        const modelIndex = supportedModels[providerKey].findIndex(m => m.id === model.modelId);
+        if (modelIndex === -1) {
+            throw new Error(`模型 ${model.modelId} 不存在于TaskMaster项目中`);
+        }
+
+        // 删除模型
+        supportedModels[providerKey].splice(modelIndex, 1);
+
+        // 写入更新后的文件
+        await this.saveConfig.writeFileToDirectory(
+            projectDirHandle,
+            supportedModelsPath,
+            JSON.stringify(supportedModels, null, 2)
+        );
     }
 
     showAddModelModal() {
@@ -389,37 +1051,7 @@ export class ModelConfig {
         }
     }
 
-    async deleteModel(modelId) {
-        const confirmed = await UINotification.confirm(
-            '确定要删除此模型吗？此操作无法撤销。',
-            {
-                title: '删除模型',
-                confirmText: '删除',
-                cancelText: '取消'
-            }
-        );
 
-        if (!confirmed) {
-            return;
-        }
-
-        try {
-            await this.configManager.deleteModel(modelId);
-            await this.loadModels();
-
-            // Dispatch change event
-            document.dispatchEvent(new CustomEvent('configChanged'));
-
-            // 显示成功消息
-            UINotification.success('模型删除成功');
-        } catch (error) {
-            // Failed to delete model
-            UINotification.error('删除模型失败', {
-                title: '删除失败',
-                duration: 5000
-            });
-        }
-    }
 
     /**
      * 测试模型API连接
@@ -879,12 +1511,7 @@ export class ModelConfig {
                     <button class="btn btn-secondary" data-action="close-modal">
                         关闭
                     </button>
-                    ${isSuccess && testType === 'TaskMaster' ? `
-                        <button class="btn btn-primary" data-action="export-test-config" data-model-id="${model.id}">
-                            <span class="btn-icon">💾</span>
-                            导出配置
-                        </button>
-                    ` : ''}
+
                 </div>
             </div>
         `;
@@ -892,42 +1519,7 @@ export class ModelConfig {
         this.showModal(modalHtml);
     }
 
-    /**
-     * 导出测试配置
-     */
-    async exportTestConfig(modelId) {
-        const model = this.models.find(m => m.id === modelId);
-        if (!model) return;
 
-        const provider = this.providers.find(p => p.id === model.providerId);
-        if (!provider) return;
-
-        try {
-            const taskMasterConfig = this.buildTaskMasterConfig(model, provider);
-
-            // 创建下载链接
-            const configJson = JSON.stringify(taskMasterConfig, null, 2);
-            const blob = new Blob([configJson], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `taskmaster-config-${model.name.toLowerCase().replace(/\s+/g, '-')}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-
-            if (window.app && window.app.updateStatus) {
-                window.app.updateStatus(`✅ ${model.name} 配置已导出`, 'success');
-            }
-        } catch (error) {
-            // Failed to export config
-            if (window.app && window.app.updateStatus) {
-                window.app.updateStatus(`❌ 配置导出失败: ${error.message}`, 'error');
-            }
-        }
-    }
 
     /**
      * HTML转义
@@ -942,6 +1534,9 @@ export class ModelConfig {
         const overlay = document.getElementById('modal-overlay');
         overlay.innerHTML = html;
         overlay.classList.remove('hidden');
+
+        // 重新绑定模态框关闭事件，因为innerHTML替换了内容
+        this.bindModalCloseEvents();
     }
 
     hideModal() {
@@ -1017,11 +1612,6 @@ export class ModelConfig {
                 if (e.target.dataset.action === 'close-modal' ||
                     e.target.classList.contains('modal-overlay')) {
                     this.hideModal();
-                } else if (e.target.dataset.action === 'export-test-config') {
-                    const modelId = e.target.dataset.modelId;
-                    if (modelId) {
-                        this.exportTestConfig(modelId);
-                    }
                 }
             };
 

@@ -98,7 +98,7 @@ if (typeof window !== 'undefined') {
     console.log('Running ConfigTransformer tests...');
     
     // Basic test implementation
-    window.runConfigTransformerTests = () => {
+    window.runConfigTransformerTests = async () => {
         const transformer = new ConfigTransformer();
         
         try {
@@ -109,7 +109,7 @@ if (typeof window !== 'undefined') {
             console.log('✅ Test 1 passed: UI to TaskMaster transformation');
 
             // Test 2: TaskMaster to UI transformation
-            const uiResult = transformer.taskMasterToUi(mockTaskMasterConfig);
+            const uiResult = await transformer.taskMasterToUi(mockTaskMasterConfig);
             console.assert(uiResult.providers.length === 2, 'Test 2 failed: Wrong number of providers');
             console.assert(uiResult.models.length === 2, 'Test 2 failed: Wrong number of models');
             console.log('✅ Test 2 passed: TaskMaster to UI transformation');

@@ -38,7 +38,7 @@ export class Logger {
     static config = {
         level: this.Levels.INFO,
         enableConsole: true,
-        enableStorage: false,
+        enableStorage: true,
         maxStorageEntries: 1000,
         timestampFormat: 'ISO',
         includeStackTrace: false

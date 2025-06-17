@@ -36,7 +36,7 @@ class TaskMasterConfigApp {
         this.configManager = new ConfigManager();
         this.saveConfig = new SaveConfig(this.configManager);
         this.providerConfig = new ProviderConfig(this.configManager, this.saveConfig);
-        this.modelConfig = new ModelConfig(this.configManager);
+        this.modelConfig = new ModelConfig(this.configManager, this.saveConfig);
         this.taskMasterTester = new TaskMasterTester(this.configManager, this.saveConfig.transformer);
         this.logViewer = new LogViewer();
 
@@ -114,10 +114,7 @@ class TaskMasterConfigApp {
             Logger.debug('🔍 按钮元素存在', { element: autoLoadBtn.tagName, id: autoLoadBtn.id });
         }
 
-        // Save button
-        this.eventGroup.add('#save-btn', 'click', () => {
-            this.saveConfiguration();
-        });
+
 
         // Add provider button
         this.eventGroup.add('#add-provider-btn', 'click', () => {
@@ -130,13 +127,6 @@ class TaskMasterConfigApp {
         });
 
         // Configuration actions
-        this.eventGroup.add('#export-config-btn', 'click', () => {
-            this.exportConfiguration();
-        });
-
-        this.eventGroup.add('#import-config-btn', 'click', () => {
-            this.importConfiguration();
-        });
 
         this.eventGroup.add('#reset-config-btn', 'click', () => {
             this.resetConfiguration();
@@ -151,18 +141,7 @@ class TaskMasterConfigApp {
             this.clearProjectPath();
         });
 
-        // 分离的测试按钮
-        this.eventGroup.add('#test-providers-btn', 'click', () => {
-            this.testAllProviders();
-        });
 
-        this.eventGroup.add('#test-models-api-btn', 'click', () => {
-            this.testAllModelsAPI();
-        });
-
-        this.eventGroup.add('#test-taskmaster-btn', 'click', () => {
-            this.testTaskMasterIntegration();
-        });
 
         // Auto load config button
         this.eventGroup.add('#auto-load-config-btn', 'click', () => {
@@ -230,32 +209,7 @@ class TaskMasterConfigApp {
         }
     }
 
-    async exportConfiguration() {
-        try {
-            appActions.showStatus('正在导出到 Task Master...', 'loading');
 
-            await this.saveConfig.exportToTaskMaster();
-
-            appActions.showStatus('配置已成功导出到 Task Master', 'success');
-        } catch (error) {
-            Logger.error('Failed to export configuration', { error: error.message }, error);
-            appActions.showStatus('配置导出失败', 'error');
-        }
-    }
-
-    async importConfiguration() {
-        try {
-            appActions.showStatus('正在从 Task Master 导入...', 'loading');
-
-            await this.saveConfig.importFromTaskMaster();
-            await this.loadInitialData();
-
-            appActions.showStatus('配置已成功从 Task Master 导入', 'success');
-        } catch (error) {
-            Logger.error('Failed to import configuration', { error: error.message }, error);
-            appActions.showStatus('配置导入失败', 'error');
-        }
-    }
 
     async resetConfiguration() {
         const confirmed = await UINotification.confirm(
@@ -476,8 +430,6 @@ class TaskMasterConfigApp {
     updateProjectPathStatus() {
         const pathElement = document.getElementById('project-path-display');
         const statusElement = document.getElementById('project-path-status');
-        const exportBtn = document.getElementById('export-config-btn');
-        const importBtn = document.getElementById('import-config-btn');
 
         const projectPath = this.configManager.getProjectPath();
         const isValid = this.configManager.isProjectValid();
@@ -486,121 +438,20 @@ class TaskMasterConfigApp {
             pathElement.textContent = projectPath;
             statusElement.textContent = '✅ 有效的 TaskMaster 项目';
             statusElement.className = 'project-status valid';
-            exportBtn.disabled = false;
-            importBtn.disabled = false;
         } else if (projectPath && !isValid) {
             pathElement.textContent = projectPath;
             statusElement.textContent = '❌ 无效的项目路径';
             statusElement.className = 'project-status invalid';
-            exportBtn.disabled = true;
-            importBtn.disabled = true;
         } else {
             pathElement.textContent = '未选择项目';
             statusElement.textContent = '⚠️ 请选择 TaskMaster 项目';
             statusElement.className = 'project-status warning';
-            exportBtn.disabled = true;
-            importBtn.disabled = true;
         }
     }
 
-    /**
-     * 测试所有API供应商
-     */
-    async testAllProviders() {
-        try {
-            this.updateStatus('正在测试所有API供应商...', 'loading');
 
-            const providers = await this.configManager.getProviders();
-            if (providers.length === 0) {
-                this.updateStatus('❌ 没有配置的供应商可供测试', 'error');
-                return;
-            }
 
-            let successCount = 0;
-            const totalCount = providers.length;
 
-            Logger.info('Starting API provider tests', { totalCount });
-
-            for (const provider of providers) {
-                try {
-                    Logger.debug(`Testing provider: ${provider.name}`);
-                    const testResult = await this.providerConfig.validator.testProviderConnection(provider);
-
-                    if (testResult.isValid) {
-                        successCount++;
-                        Logger.info(`✅ ${provider.name}: ${testResult.message}`);
-                    } else {
-                        Logger.error(`❌ ${provider.name}: ${testResult.errors.join(', ')}`);
-                    }
-                } catch (error) {
-                    ErrorHandler.handle(error, {
-                        component: 'TaskMasterConfigApp',
-                        method: 'testAllProviders',
-                        provider: provider.name
-                    }, { showUserFeedback: false });
-                }
-            }
-
-            const message = `API供应商测试完成: ${successCount}/${totalCount} 通过`;
-            const type = successCount === totalCount ? 'success' : (successCount > 0 ? 'warning' : 'error');
-            this.updateStatus(message, type);
-
-        } catch (error) {
-            ErrorHandler.handle(error, {
-                component: 'TaskMasterConfigApp',
-                method: 'testAllProviders',
-                action: 'test_providers'
-            });
-            this.updateStatus('❌ 供应商测试失败', 'error');
-        }
-    }
-
-    /**
-     * 测试所有模型的API连接
-     */
-    async testAllModelsAPI() {
-        try {
-            this.updateStatus('正在测试所有模型API连接...', 'loading');
-
-            const models = await this.configManager.getModels();
-            if (models.length === 0) {
-                this.updateStatus('❌ 没有配置的模型可供测试', 'error');
-                return;
-            }
-
-            let successCount = 0;
-            const totalCount = models.length;
-
-            Logger.info('🧠 开始模型API测试');
-
-            for (const model of models) {
-                try {
-                    Logger.debug(`测试模型API: ${model.name} (${model.modelId})`);
-                    const testResult = await this.modelConfig.performModelAPITest(model,
-                        this.providerConfig.providers.find(p => p.id === model.providerId));
-
-                    if (testResult.isValid) {
-                        successCount++;
-                        Logger.info(`✅ ${model.name}: API连接成功`);
-                    } else {
-                        Logger.error(`❌ ${model.name}: ${testResult.error}`);
-                    }
-                } catch (error) {
-                    Logger.error(`❌ ${model.name}: API测试失败`, { error: error.message });
-                }
-            }
-
-            Logger.info('🧠 模型API测试完成');
-
-            const message = `模型API测试完成: ${successCount}/${totalCount} 通过`;
-            const type = successCount === totalCount ? 'success' : (successCount > 0 ? 'warning' : 'error');
-            this.updateStatus(message, type);
-
-        } catch (error) {
-            Logger.error('Failed to test models API', { error: error.message }, error);
-            this.updateStatus('❌ 模型API测试失败', 'error');
-        }
-    }
 
     /**
      * 测试TaskMaster集成
