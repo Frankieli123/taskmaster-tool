@@ -1,3 +1,7 @@
+/* eslint-env browser */
+/* global indexedDB */
+/* eslint-disable no-console */
+
 /**
  * 目录句柄管理器 - 处理FileSystemDirectoryHandle的持久化存储和权限管理
  */

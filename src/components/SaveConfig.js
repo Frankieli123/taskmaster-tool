@@ -303,7 +303,7 @@ export class SaveConfig {
                 );
                 if (mcpContent) {
                     const mcpConfig = JSON.parse(mcpContent);
-                    const mcpEnv = mcpConfig?.mcpServers?.['taskmaster-api']?.env || {};
+                    const mcpEnv = mcpConfig?.mcpServers?.['taskmaster-ai']?.env || {};
                     Logger.info('✅ mcp.json 读取成功');
 
                     // 根据supportedModels和API密钥构建providers配置
@@ -371,7 +371,7 @@ export class SaveConfig {
 
             providers[providerKey] = {
                 name: providerConfig?.displayName || this.getProviderDisplayName(providerKey),
-                endpoint: providerConfig?.endpoint || this.getDefaultEndpointFallback(providerKey),
+                endpoint: providerConfig?.endpoint || '', // 不使用默认端点，以实际配置为准
                 type: providerConfig?.type || this.getProviderType(providerKey),
                 apiKey: apiKey
             };
@@ -401,7 +401,7 @@ export class SaveConfig {
 
             providers[providerKey] = {
                 name: providerConfig?.displayName || this.getProviderDisplayName(providerKey),
-                endpoint: providerConfig?.endpoint || this.getDefaultEndpointFallback(providerKey),
+                endpoint: providerConfig?.endpoint || '', // 不使用默认端点，以实际配置为准
                 type: providerConfig?.type || this.getProviderType(providerKey),
                 apiKey: '请在编辑时设置您的API密钥'
             };
@@ -410,26 +410,7 @@ export class SaveConfig {
         return providers;
     }
 
-    /**
-     * 获取默认端点（备用方案）
-     */
-    getDefaultEndpointFallback(providerKey) {
-        const defaultEndpoints = {
-            'openai': 'https://api.openai.com',
-            'anthropic': 'https://api.anthropic.com',
-            'google': 'https://generativelanguage.googleapis.com',
-            'polo': 'https://api.polo.ai',
-            'poloai': 'https://api.polo.ai',
-            'foapi': 'https://v2.voct.top',
-            'aoapi': 'https://api.aoapi.com',
-            'perplexity': 'https://api.perplexity.ai',
-            'xai': 'https://api.x.ai',
-            'openrouter': 'https://openrouter.ai/api',
-            'ollama': 'http://localhost:11434',
-            'whi': 'https://doi9.top'
-        };
-        return defaultEndpoints[providerKey] || `https://api.${providerKey.toLowerCase()}.com`;
-    }
+
 
     /**
      * 获取供应商显示名称
@@ -544,12 +525,19 @@ export class SaveConfig {
      */
     async saveTaskMasterConfigFiles(projectDirHandle, taskMasterConfig) {
         try {
-            // 只保存 scripts/modules/supported-models.json
+            // 只保存 scripts/modules/supported-models.json 到TaskMaster包目录
             // config.json 由用户通过 TaskMaster 初始化流程管理
             if (taskMasterConfig.supportedModels && Object.keys(taskMasterConfig.supportedModels).length > 0) {
                 Logger.info('💾 保存 supported-models.json...');
+
+                // 获取TaskMaster包目录句柄
+                let packageDirHandle = this.directoryHandleCache.get('taskmaster-package');
+                if (!packageDirHandle) {
+                    throw new Error('TaskMaster包目录不可用，请先选择TaskMaster包目录');
+                }
+
                 await this.writeFileToDirectory(
-                    projectDirHandle,
+                    packageDirHandle,
                     'scripts/modules/supported-models.json',
                     JSON.stringify(taskMasterConfig.supportedModels, null, 2)
                 );
@@ -585,7 +573,7 @@ export class SaveConfig {
                 // 创建默认的MCP配置结构
                 mcpConfig = {
                     mcpServers: {
-                        'taskmaster-api': {
+                        'taskmaster-ai': {
                             command: 'node',
                             args: ['dist/index.js'],
                             env: {}
@@ -598,18 +586,18 @@ export class SaveConfig {
             if (!mcpConfig.mcpServers) {
                 mcpConfig.mcpServers = {};
             }
-            if (!mcpConfig.mcpServers['taskmaster-api']) {
-                mcpConfig.mcpServers['taskmaster-api'] = {
+            if (!mcpConfig.mcpServers['taskmaster-ai']) {
+                mcpConfig.mcpServers['taskmaster-ai'] = {
                     command: 'node',
                     args: ['dist/index.js'],
                     env: {}
                 };
             }
-            if (!mcpConfig.mcpServers['taskmaster-api'].env) {
-                mcpConfig.mcpServers['taskmaster-api'].env = {};
+            if (!mcpConfig.mcpServers['taskmaster-ai'].env) {
+                mcpConfig.mcpServers['taskmaster-ai'].env = {};
             }
 
-            const mcpEnv = mcpConfig.mcpServers['taskmaster-api'].env;
+            const mcpEnv = mcpConfig.mcpServers['taskmaster-ai'].env;
 
             // 更新每个供应商的API密钥
             providers.forEach(provider => {
@@ -896,15 +884,38 @@ export class SaveConfig {
     }
 
     /**
-     * 写入JavaScript文件到TaskMaster项目
+     * 写入JavaScript文件到TaskMaster包目录
      */
-    async writeJavaScriptFile(relativePath, content) {
+    async writeJavaScriptFileToPackage(relativePath, content) {
+        try {
+            // 获取TaskMaster包目录句柄
+            let packageDirHandle = this.directoryHandleCache.get('taskmaster-package');
+
+            if (!packageDirHandle) {
+                throw new Error('TaskMaster包目录未设置。请先选择TaskMaster包目录。');
+            }
+
+            // 写入文件到指定路径
+            await this.writeFileToDirectory(packageDirHandle, relativePath, content);
+
+            Logger.info(`Successfully wrote JavaScript file to package: ${relativePath}`);
+            return true;
+        } catch (error) {
+            Logger.error(`Failed to write JavaScript file to package ${relativePath}`, { error: error.message }, error);
+            throw error;
+        }
+    }
+
+    /**
+     * 写入JavaScript文件到用户项目目录
+     */
+    async writeJavaScriptFileToProject(relativePath, content) {
         try {
             if (!this.configManager.isProjectValid()) {
                 throw new Error('TaskMaster 项目路径未设置或无效。请先选择有效的项目路径。');
             }
 
-            // 获取项目目录句柄
+            // 获取用户项目目录句柄
             let projectDirHandle = this.directoryHandleCache.get('taskmaster-project');
 
             if (!projectDirHandle) {
@@ -923,11 +934,31 @@ export class SaveConfig {
             // 写入文件到指定路径
             await this.writeFileToDirectory(projectDirHandle, relativePath, content);
 
-            Logger.info(`Successfully wrote JavaScript file: ${relativePath}`);
+            Logger.info(`Successfully wrote JavaScript file to project: ${relativePath}`);
             return true;
         } catch (error) {
-            Logger.error(`Failed to write JavaScript file ${relativePath}`, { error: error.message }, error);
+            Logger.error(`Failed to write JavaScript file to project ${relativePath}`, { error: error.message }, error);
             throw error;
+        }
+    }
+
+
+
+
+
+    /**
+     * 写入JavaScript文件到TaskMaster项目 (保持向后兼容)
+     * @deprecated 请使用 writeJavaScriptFileToPackage 或 writeJavaScriptFileToProject
+     */
+    async writeJavaScriptFile(relativePath, content) {
+        // 根据文件路径判断应该写入到哪个目录
+        if (relativePath.startsWith('src/') || relativePath.startsWith('scripts/')) {
+            return await this.writeJavaScriptFileToPackage(relativePath, content);
+        } else if (relativePath.startsWith('.cursor/')) {
+            return await this.writeJavaScriptFileToProject(relativePath, content);
+        } else {
+            // 默认写入到项目目录
+            return await this.writeJavaScriptFileToProject(relativePath, content);
         }
     }
 
@@ -971,15 +1002,44 @@ export class SaveConfig {
     }
 
     /**
-     * 更新现有文件（如在index.js中添加导出行）
+     * 更新现有文件内容到TaskMaster包目录
      */
-    async updateExistingFile(relativePath, updateFunction) {
+    async updateExistingFileInPackage(relativePath, updateFunction) {
+        try {
+            // 获取TaskMaster包目录句柄
+            let packageDirHandle = this.directoryHandleCache.get('taskmaster-package');
+
+            if (!packageDirHandle) {
+                throw new Error('TaskMaster包目录未设置。请先选择TaskMaster包目录。');
+            }
+
+            // 读取现有文件内容
+            const existingContent = await this.readFileFromDirectory(packageDirHandle, relativePath);
+
+            // 使用更新函数处理内容
+            const updatedContent = updateFunction(existingContent || '');
+
+            // 写入更新后的内容
+            await this.writeFileToDirectory(packageDirHandle, relativePath, updatedContent);
+
+            Logger.info(`Successfully updated file in package: ${relativePath}`);
+            return true;
+        } catch (error) {
+            Logger.error(`Failed to update file in package ${relativePath}`, { error: error.message }, error);
+            throw error;
+        }
+    }
+
+    /**
+     * 更新现有文件内容到用户项目目录
+     */
+    async updateExistingFileInProject(relativePath, updateFunction) {
         try {
             if (!this.configManager.isProjectValid()) {
                 throw new Error('TaskMaster 项目路径未设置或无效。请先选择有效的项目路径。');
             }
 
-            // 获取项目目录句柄
+            // 获取用户项目目录句柄
             let projectDirHandle = this.directoryHandleCache.get('taskmaster-project');
 
             if (!projectDirHandle) {
@@ -999,11 +1059,29 @@ export class SaveConfig {
             // 写入更新后的内容
             await this.writeFileToDirectory(projectDirHandle, relativePath, updatedContent);
 
-            Logger.info(`Successfully updated file: ${relativePath}`);
+            Logger.info(`Successfully updated file in project: ${relativePath}`);
             return true;
         } catch (error) {
-            Logger.error(`Failed to update file ${relativePath}`, { error: error.message }, error);
+            Logger.error(`Failed to update file in project ${relativePath}`, { error: error.message }, error);
             throw error;
+        }
+    }
+
+
+
+    /**
+     * 更新现有文件（如在index.js中添加导出行）- 保持向后兼容
+     * @deprecated 请使用 updateExistingFileInPackage 或 updateExistingFileInProject
+     */
+    async updateExistingFile(relativePath, updateFunction) {
+        // 根据文件路径判断应该更新哪个目录的文件
+        if (relativePath.startsWith('src/') || relativePath.startsWith('scripts/')) {
+            return await this.updateExistingFileInPackage(relativePath, updateFunction);
+        } else if (relativePath.startsWith('.cursor/')) {
+            return await this.updateExistingFileInProject(relativePath, updateFunction);
+        } else {
+            // 默认更新项目目录
+            return await this.updateExistingFileInProject(relativePath, updateFunction);
         }
     }
 
@@ -1041,6 +1119,25 @@ export class SaveConfig {
                 throw error;
             }
         } catch (error) {
+            // 检查是否是安全策略错误
+            if (error.name === 'SecurityError' && error.message.includes('security policy')) {
+                const enhancedError = new Error(
+                    `无法访问文件 ${relativePath}。这通常是因为TaskMaster包位于系统保护的目录中。\n\n` +
+                    `建议解决方案：\n` +
+                    `1. 将TaskMaster包复制到用户目录（如Documents文件夹）\n` +
+                    `2. 或者使用本地开发版本的TaskMaster\n` +
+                    `3. 避免使用npm全局安装目录或系统目录\n\n` +
+                    `原始错误: ${error.message}`
+                );
+                enhancedError.name = 'SecurityError';
+                enhancedError.originalError = error;
+                Logger.error(`安全策略阻止访问文件 ${relativePath}`, {
+                    error: error.message,
+                    suggestion: '请将TaskMaster包移动到用户目录'
+                }, enhancedError);
+                throw enhancedError;
+            }
+
             Logger.error(`读取文件失败 ${relativePath}`, { error: error.message }, error);
             throw error;
         }

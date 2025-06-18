@@ -12,23 +12,24 @@ export class ConfigManager {
         this.models = [];
         this.storageKey = 'taskmaster-ui-config';
         this.projectPathKey = 'taskmaster-project-path';
+        this.packagePathKey = 'taskmaster-package-path';
         this.taskmasterProjectPath = null;
+        this.taskmasterPackagePath = null;
         this.isValidProject = false;
+        this.isValidPackage = false;
     }
 
     async loadConfiguration() {
         // Initialize project path first
         await this.initializeProjectPath();
 
-        const stored = localStorage.getItem(this.storageKey);
+        // Initialize package path
+        await this.initializePackagePath();
 
-        if (stored) {
-            const config = JSON.parse(stored);
-            this.providers = config.providers || [];
-            this.models = config.models || [];
-        }
-
-        // 不再加载默认配置，保持空状态直到用户导入真实配置
+        // 不从localStorage读取，只保持空状态
+        // 模型数据只从TaskMaster项目读取
+        this.providers = [];
+        this.models = [];
 
         return true;
     }
@@ -53,53 +54,61 @@ export class ConfigManager {
         return true;
     }
 
-    async loadDefaultProviders() {
-        const defaultProviders = [
-            {
-                id: 'provider_openai_default',
-                name: 'OpenAI',
-                endpoint: 'https://api.openai.com',
-                type: 'openai',
-                apiKey: '',
-                isValid: false
-            },
-            {
-                id: 'provider_anthropic_default',
-                name: 'Anthropic',
-                endpoint: 'https://api.anthropic.com',
-                type: 'anthropic',
-                apiKey: '',
-                isValid: false
-            },
-            {
-                id: 'provider_poloai_default',
-                name: 'PoloAI',
-                endpoint: 'https://api.polo.ai',
-                type: 'openai',
-                apiKey: '',
-                isValid: false
-            },
-            {
-                id: 'provider_foapi_default',
-                name: 'FoApi',
-                endpoint: 'https://v2.voct.top',
-                type: 'openai',
-                apiKey: '',
-                isValid: false
-            }
-        ];
 
-        this.providers = defaultProviders;
-        await this.saveConfiguration();
+
+    // 获取默认服务商名称列表
+    getDefaultProviderNames() {
+        return [
+            'anthropic', 'azure', 'bedrock', 'google-vertex', 'google',
+            'ollama', 'openai', 'openrouter', 'perplexity', 'xai'
+        ];
+    }
+
+    // 检查是否为默认服务商
+    isDefaultProvider(provider) {
+        const defaultProviderNames = this.getDefaultProviderNames();
+        const providerNameLower = provider.name.toLowerCase();
+        const providerKeyLower = (provider.key || '').toLowerCase();
+        const providerIdLower = (provider.id || '').toLowerCase();
+
+        return defaultProviderNames.some(defaultName => {
+            // 检查名称是否完全匹配或包含默认服务商名称
+            const nameMatches = providerNameLower === defaultName ||
+                              providerNameLower.includes(defaultName);
+            // 检查key是否匹配
+            const keyMatches = providerKeyLower === defaultName;
+            // 检查ID是否包含默认服务商名称
+            const idMatches = providerIdLower.includes(defaultName);
+
+            return nameMatches || keyMatches || idMatches;
+        });
+    }
+
+    // 检查模型是否属于默认服务商
+    isModelFromDefaultProvider(model) {
+        // 通过providerId查找对应的provider
+        const provider = this.providers.find(p => p.id === model.providerId);
+        if (!provider) {
+            return false;
+        }
+        return this.isDefaultProvider(provider);
     }
 
     // Provider Management
     async getProviders() {
+        // 过滤掉默认服务商，只显示自定义添加的服务商
+        const filteredProviders = this.providers.filter(provider => !this.isDefaultProvider(provider));
+
         // 为每个provider添加其对应的models数组，以便UI能正确显示模型数量
-        return this.providers.map(provider => ({
+        return filteredProviders.map(provider => ({
             ...provider,
             models: this.getModelsByProvider(provider.id)
         }));
+    }
+
+    // 获取所有供应商（包括默认服务商），用于内部逻辑检查
+    getAllProviders() {
+        return [...this.providers];
     }
 
     async addProvider(providerData) {
@@ -178,7 +187,8 @@ export class ConfigManager {
 
     // Model Management
     async getModels() {
-        return [...this.models];
+        // 筛选掉属于默认服务商的模型，只显示自定义服务商的模型
+        return this.models.filter(model => !this.isModelFromDefaultProvider(model));
     }
 
     async addModel(modelData) {
@@ -299,11 +309,17 @@ export class ConfigManager {
     }
 
     getModelsByProvider(providerId) {
-        return this.models.filter(m => m.providerId === providerId);
+        // 筛选掉属于默认服务商的模型
+        return this.models.filter(m =>
+            m.providerId === providerId && !this.isModelFromDefaultProvider(m)
+        );
     }
 
     getModelsByRole(role) {
-        return this.models.filter(m => m.allowedRoles?.includes(role));
+        // 筛选掉属于默认服务商的模型
+        return this.models.filter(m =>
+            m.allowedRoles?.includes(role) && !this.isModelFromDefaultProvider(m)
+        );
     }
 
     generateId(prefix = 'item') {
@@ -446,6 +462,120 @@ export class ConfigManager {
             return false;
         } catch (error) {
             // Failed to initialize project path
+            return false;
+        }
+    }
+
+    // TaskMaster Package Path Management
+
+    /**
+     * Load the saved TaskMaster package path from localStorage
+     * @returns {Promise<string|null>} The saved package path or null if not found
+     */
+    async loadSavedPackagePath() {
+        try {
+            const savedPath = localStorage.getItem(this.packagePathKey);
+            if (savedPath) {
+                this.taskmasterPackagePath = savedPath;
+                this.isValidPackage = await this.validatePackagePath(savedPath);
+                return savedPath;
+            }
+            return null;
+        } catch (error) {
+            // Failed to load saved package path
+            return null;
+        }
+    }
+
+    /**
+     * Save the TaskMaster package path to localStorage
+     * @param {string} packagePath - The package path to save
+     * @returns {Promise<boolean>} Success status
+     */
+    async savePackagePath(packagePath) {
+        if (!packagePath) {
+            localStorage.removeItem(this.packagePathKey);
+            this.taskmasterPackagePath = null;
+            this.isValidPackage = false;
+            return true;
+        }
+
+        const isValid = await this.validatePackagePath(packagePath);
+        if (isValid) {
+            localStorage.setItem(this.packagePathKey, packagePath);
+            this.taskmasterPackagePath = packagePath;
+            this.isValidPackage = true;
+            return true;
+        } else {
+            throw new Error('无效的 TaskMaster 包路径');
+        }
+    }
+
+    /**
+     * Validate if a given path is a valid TaskMaster package
+     * @param {string} packagePath - The path to validate
+     * @returns {Promise<boolean>} True if valid TaskMaster package
+     */
+    async validatePackagePath(packagePath) {
+        try {
+            if (!packagePath || typeof packagePath !== 'string') {
+                return false;
+            }
+
+            // In browser environment, we can only do basic path validation
+            // The actual file system validation will be done when user selects directory
+
+            // Check if path looks like a valid directory path
+            const normalizedPath = packagePath.replace(/\\/g, '/');
+
+            // Basic validation: should not be empty and should look like a path
+            if (normalizedPath.length === 0) {
+                return false;
+            }
+
+            // For now, we'll accept any non-empty path and let the user verify
+            // by successfully accessing the package directory
+            return true;
+        } catch (error) {
+            // Error validating package path
+            return false;
+        }
+    }
+
+    /**
+     * Get the current TaskMaster package path
+     * @returns {string|null} The current package path
+     */
+    getPackagePath() {
+        return this.taskmasterPackagePath;
+    }
+
+    /**
+     * Check if the current package path is valid
+     * @returns {boolean} True if package path is valid
+     */
+    isPackageValid() {
+        return this.isValidPackage;
+    }
+
+    /**
+     * Initialize package path on startup
+     * @returns {Promise<boolean>} True if package path was loaded and validated
+     */
+    async initializePackagePath() {
+        try {
+            const savedPath = await this.loadSavedPackagePath();
+            if (savedPath && this.isValidPackage) {
+                // TaskMaster package loaded
+                return true;
+            } else if (savedPath) {
+                // Saved package path is no longer valid
+                // Clear invalid path
+                await this.savePackagePath(null);
+            }
+            return false;
+        } catch (error) {
+            // Failed to initialize package path
             return false;
         }
     }

@@ -268,8 +268,13 @@ export class ModelConfig {
      */
     filterByProvider(providerId) {
         // 过滤显示服务商模型
-
         this.currentProviderFilter = providerId || null;
+
+        // 更新筛选下拉框的选中状态
+        const filterSelect = document.getElementById('models-provider-filter');
+        if (filterSelect) {
+            filterSelect.value = providerId || '';
+        }
 
         // 应用过滤器并重新渲染
         this.renderModels();
@@ -830,15 +835,15 @@ export class ModelConfig {
      */
     async removeModelFromTaskMaster(model, provider) {
         const supportedModelsPath = 'scripts/modules/supported-models.json';
-        const projectDirHandle = this.saveConfig.directoryHandleCache.get('taskmaster-project');
+        const packageDirHandle = this.saveConfig.directoryHandleCache.get('taskmaster-package');
 
-        if (!projectDirHandle) {
-            throw new Error('TaskMaster项目目录不可用');
+        if (!packageDirHandle) {
+            throw new Error('TaskMaster包目录不可用');
         }
 
         // 读取现有的supported-models.json
         const existingContent = await this.saveConfig.readFileFromDirectory(
-            projectDirHandle,
+            packageDirHandle,
             supportedModelsPath
         );
 
@@ -864,7 +869,7 @@ export class ModelConfig {
 
         // 写入更新后的文件
         await this.saveConfig.writeFileToDirectory(
-            projectDirHandle,
+            packageDirHandle,
             supportedModelsPath,
             JSON.stringify(supportedModels, null, 2)
         );

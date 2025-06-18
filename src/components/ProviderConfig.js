@@ -34,6 +34,9 @@ export class ProviderConfig {
             } else if (e.target.matches('.load-models-btn')) {
                 const providerId = e.target.dataset.providerId;
                 this.loadProviderModels(providerId);
+            } else if (e.target.matches('.filter-models-btn')) {
+                const providerId = e.target.dataset.providerId;
+                this.filterProviderModels(providerId);
             }
         });
     }
@@ -61,6 +64,8 @@ export class ProviderConfig {
         const container = document.getElementById('providers-list');
 
         if (this.providers.length === 0) {
+            // 为空状态添加特殊CSS类以实现完美居中
+            container.classList.add('empty-state-container');
             container.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-icon">🔌</div>
@@ -75,6 +80,8 @@ export class ProviderConfig {
             return;
         }
 
+        // 移除空状态CSS类，恢复正常grid布局
+        container.classList.remove('empty-state-container');
         container.innerHTML = this.providers.map(provider => this.renderProviderCard(provider)).join('');
     }
 
@@ -123,6 +130,10 @@ export class ProviderConfig {
                     <button class="btn btn-sm btn-danger delete-provider-btn" data-provider-id="${provider.id}">
                         <span class="btn-icon">🗑️</span>
                         删除
+                    </button>
+                    <button class="btn btn-sm btn-filter filter-models-btn" data-provider-id="${provider.id}">
+                        <span class="btn-icon">🔍</span>
+                        筛选模型
                     </button>
                 </div>
             </div>
@@ -236,7 +247,7 @@ export class ProviderConfig {
 
         try {
             // 只检查重复名称，不进行任何格式验证
-            const existingProviders = await this.configManager.getProviders();
+            const existingProviders = this.configManager.getAllProviders();
             const duplicateName = existingProviders.find(p =>
                 p.name.toLowerCase() === providerData.name.toLowerCase() &&
                 p.id !== providerData.id
@@ -583,7 +594,7 @@ export class ProviderConfig {
                 // 文件不存在，创建默认结构
                 mcpConfig = {
                     mcpServers: {
-                        'taskmaster-api': {
+                        'taskmaster-ai': {
                             command: 'node',
                             args: ['dist/index.js'],
                             env: {}
@@ -596,18 +607,18 @@ export class ProviderConfig {
             if (!mcpConfig.mcpServers) {
                 mcpConfig.mcpServers = {};
             }
-            if (!mcpConfig.mcpServers['taskmaster-api']) {
-                mcpConfig.mcpServers['taskmaster-api'] = {
+            if (!mcpConfig.mcpServers['taskmaster-ai']) {
+                mcpConfig.mcpServers['taskmaster-ai'] = {
                     command: 'node',
                     args: ['dist/index.js'],
                     env: {}
                 };
             }
-            if (!mcpConfig.mcpServers['taskmaster-api'].env) {
-                mcpConfig.mcpServers['taskmaster-api'].env = {};
+            if (!mcpConfig.mcpServers['taskmaster-ai'].env) {
+                mcpConfig.mcpServers['taskmaster-ai'].env = {};
             }
 
-            const mcpEnv = mcpConfig.mcpServers['taskmaster-api'].env;
+            const mcpEnv = mcpConfig.mcpServers['taskmaster-ai'].env;
 
             // 只更新当前供应商的API密钥
             if (providerData.apiKey && providerData.apiKey.trim() !== '') {
@@ -631,7 +642,7 @@ export class ProviderConfig {
             try {
                 const verifyContent = await this.saveConfig.readFileFromDirectory(projectDirHandle, mcpConfigPath);
                 const verifyConfig = JSON.parse(verifyContent);
-                const verifyEnv = verifyConfig.mcpServers?.['taskmaster-api']?.env;
+                const verifyEnv = verifyConfig.mcpServers?.['taskmaster-ai']?.env;
 
                 if (providerData.apiKey && providerData.apiKey.trim() !== '') {
                     const providerKey = providerData.name.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -698,8 +709,14 @@ export class ProviderConfig {
 
             // 保存supported-models.json（如果有模型的话）
             if (taskMasterConfig.supportedModels && Object.keys(taskMasterConfig.supportedModels).length > 0) {
+                // 获取TaskMaster包目录句柄
+                let packageDirHandle = saveConfig.directoryHandleCache.get('taskmaster-package');
+                if (!packageDirHandle) {
+                    throw new Error('TaskMaster包目录不可用，请先选择TaskMaster包目录');
+                }
+
                 await saveConfig.writeFileToDirectory(
-                    projectDirHandle,
+                    packageDirHandle,
                     'scripts/modules/supported-models.json',
                     JSON.stringify(taskMasterConfig.supportedModels, null, 2)
                 );
@@ -743,10 +760,16 @@ export class ProviderConfig {
             // 为每个模型创建配置并添加到系统中
             let addedCount = 0;
             for (const modelInfo of supportedModels) {
+                // 生成带前缀的模型ID，保持与TaskMaster格式一致
+                const providerPrefix = provider.name.toLowerCase() + '-';
+                const prefixedModelId = modelInfo.id.startsWith(providerPrefix)
+                    ? modelInfo.id
+                    : providerPrefix + modelInfo.id;
+
                 const modelData = {
                     id: this.generateModelId(),
-                    name: modelInfo.name || modelInfo.id, // 使用原始模型名称
-                    modelId: modelInfo.id, // 使用原始模型ID，不添加前缀
+                    name: modelInfo.name || modelInfo.id, // 使用原始模型名称（不带前缀）
+                    modelId: prefixedModelId, // 使用带前缀的模型ID，与TaskMaster格式一致
                     providerId: provider.id,
                     providerName: provider.name,
                     allowedRoles: ['main', 'fallback'], // 默认角色
@@ -759,7 +782,7 @@ export class ProviderConfig {
                     isActive: true
                 };
 
-                // 检查是否已存在相同的模型（使用原始模型ID）
+                // 检查是否已存在相同的模型（使用带前缀的模型ID）
                 const existingModels = await this.configManager.getModels();
                 const exists = existingModels.find(m =>
                     m.modelId === modelData.modelId
@@ -802,6 +825,33 @@ export class ProviderConfig {
                 loadBtn.disabled = false;
             }
         }
+    }
+
+    /**
+     * 筛选显示指定服务商的模型（不加载新模型）
+     */
+    filterProviderModels(providerId) {
+        const provider = this.providers.find(p => p.id === providerId);
+        if (!provider) return;
+
+        // 切换到模型标签页
+        const modelsTab = document.querySelector('[data-tab="models"]');
+        if (modelsTab) {
+            modelsTab.click();
+        }
+
+        // 设置过滤器并重新渲染
+        setTimeout(() => {
+            if (window.app && window.app.modelConfig) {
+                // 直接设置过滤器，不重新加载模型数据
+                window.app.modelConfig.filterByProvider(provider.id);
+
+                // 显示筛选状态
+                if (window.app && window.app.updateStatus) {
+                    window.app.updateStatus(`🔍 正在显示 ${provider.name} 的模型`, 'info');
+                }
+            }
+        }, 100);
     }
 
     /**
@@ -986,7 +1036,7 @@ export class ProviderConfig {
                 console.log('📝 创建新的MCP配置结构');
                 mcpConfig = {
                     mcpServers: {
-                        'taskmaster-api': {
+                        'taskmaster-ai': {
                             command: 'node',
                             args: ['dist/index.js'],
                             env: {}
@@ -997,18 +1047,18 @@ export class ProviderConfig {
 
             // 确保结构存在
             if (!mcpConfig.mcpServers) mcpConfig.mcpServers = {};
-            if (!mcpConfig.mcpServers['taskmaster-api']) {
-                mcpConfig.mcpServers['taskmaster-api'] = {
+            if (!mcpConfig.mcpServers['taskmaster-ai']) {
+                mcpConfig.mcpServers['taskmaster-ai'] = {
                     command: 'node',
                     args: ['dist/index.js'],
                     env: {}
                 };
             }
-            if (!mcpConfig.mcpServers['taskmaster-api'].env) {
-                mcpConfig.mcpServers['taskmaster-api'].env = {};
+            if (!mcpConfig.mcpServers['taskmaster-ai'].env) {
+                mcpConfig.mcpServers['taskmaster-ai'].env = {};
             }
 
-            const mcpEnv = mcpConfig.mcpServers['taskmaster-api'].env;
+            const mcpEnv = mcpConfig.mcpServers['taskmaster-ai'].env;
             const envVarName = `${providerName.toUpperCase()}_API_KEY`;
 
             console.log(`🔑 设置 ${envVarName} = ${apiKey}`);

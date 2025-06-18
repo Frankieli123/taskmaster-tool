@@ -199,30 +199,12 @@ export class ProviderFileParser {
      * @returns {Object} 补全后的配置
      */
     fillDefaults(config) {
-        if (!config.endpoint) {
-            // 根据类型提供默认端点
-            switch (config.type) {
-                case 'openai':
-                    config.endpoint = `https://api.${config.key.toLowerCase()}.com`;
-                    break;
-                case 'anthropic':
-                    config.endpoint = 'https://api.anthropic.com';
-                    break;
-                case 'google':
-                    config.endpoint = 'https://generativelanguage.googleapis.com';
-                    break;
-                case 'ollama':
-                    config.endpoint = 'http://localhost:11434';
-                    break;
-                default:
-                    config.endpoint = `https://api.${config.key.toLowerCase()}.com`;
-            }
-        }
-        
+        // 不再自动填充默认端点，保持端点为空或使用实际解析到的值
+
         if (!config.displayName) {
             config.displayName = config.key.charAt(0).toUpperCase() + config.key.slice(1);
         }
-        
+
         return config;
     }
 }

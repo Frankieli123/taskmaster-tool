@@ -96,17 +96,59 @@
                             <h2>配置管理</h2>
                         </div>
 
+                        <!-- TaskMaster Package Section -->
+                        <section class="taskmaster-package-section" aria-labelledby="package-path-heading">
+                            <h3 id="package-path-heading">TaskMaster 包位置</h3>
+                            <div class="package-path-card">
+                                <div class="package-path-info">
+                                    <div class="path-display">
+                                        <label for="package-path-display">TaskMaster包：</label>
+                                        <span id="package-path-display" role="status" aria-live="polite">未选择TaskMaster包</span>
+                                    </div>
+                                    <div class="path-status">
+                                        <span id="package-path-status" class="package-status warning" role="status" aria-live="polite">⚠️ 请选择 TaskMaster 包目录</span>
+                                    </div>
+                                </div>
+                                <div class="package-path-actions">
+                                    <button id="select-package-btn" class="btn btn-primary" aria-label="选择TaskMaster包目录">
+                                        <span class="btn-icon" aria-hidden="true">📦</span>
+                                        选择TaskMaster包
+                                    </button>
+                                    <button id="clear-package-btn" class="btn btn-secondary" aria-label="清除TaskMaster包路径">
+                                        <span class="btn-icon" aria-hidden="true">🗑️</span>
+                                        清除
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Package Location Hints -->
+                            <div class="package-location-hints">
+                                <div class="location-hint">
+                                    <strong>本地安装：</strong>
+                                    <code>项目目录/node_modules/task-master-ai/</code>
+                                </div>
+                                <div class="location-hint">
+                                    <strong>全局安装：</strong>
+                                    <code>C:\Users\用户名\AppData\Roaming\npm\node_modules\task-master-ai\</code>
+                                </div>
+                                <div class="location-hint">
+                                    <strong>npx缓存：</strong>
+                                    <code>C:\Users\用户名\AppData\Local\npm-cache\_npx\[hash]\node_modules\task-master-ai\</code>
+                                </div>
+                            </div>
+                        </section>
+
                         <!-- Project Path Section -->
                         <section class="project-path-section" aria-labelledby="project-path-heading">
-                            <h3 id="project-path-heading">TaskMaster 项目路径</h3>
+                            <h3 id="project-path-heading">用户项目路径</h3>
                             <div class="project-path-card">
                                 <div class="project-path-info">
                                     <div class="path-display">
-                                        <label for="project-path-display">当前路径：</label>
+                                        <label for="project-path-display">项目目录：</label>
                                         <span id="project-path-display" role="status" aria-live="polite">未选择项目</span>
                                     </div>
                                     <div class="path-status">
-                                        <span id="project-path-status" class="project-status warning" role="status" aria-live="polite">⚠️ 请选择 TaskMaster 项目</span>
+                                        <span id="project-path-status" class="project-status warning" role="status" aria-live="polite">⚠️ 请选择用户项目目录</span>
                                     </div>
                                 </div>
                                 <div class="project-path-actions">
@@ -160,6 +202,8 @@
 
     <!-- Modals will be dynamically created -->
     <div id="modal-overlay" class="modal-overlay hidden"></div>
+
+
 
     <!-- Log Viewer Container -->
     <div id="log-viewer"></div>

@@ -132,6 +132,15 @@ class TaskMasterConfigApp {
             this.resetConfiguration();
         });
 
+        // TaskMaster package location
+        this.eventGroup.add('#select-package-btn', 'click', () => {
+            this.selectPackagePath();
+        });
+
+        this.eventGroup.add('#clear-package-btn', 'click', () => {
+            this.clearPackagePath();
+        });
+
         // Project path selection
         this.eventGroup.add('#select-project-btn', 'click', () => {
             this.selectProjectPath();
@@ -167,14 +176,27 @@ class TaskMasterConfigApp {
             // Load configuration first
             await this.configManager.loadConfiguration();
 
-            // Load providers
+            // 如果有TaskMaster项目，先尝试从TaskMaster加载配置
+            if (this.configManager.isProjectValid()) {
+                const autoLoaded = await this.saveConfig.tryAutoLoadExistingConfig();
+                if (autoLoaded) {
+                    Logger.info('从TaskMaster项目自动加载配置成功');
+                }
+            }
+
+            // Load providers (不再重复从TaskMaster加载)
             await this.providerConfig.loadProviders();
 
-            // Load models
+            // Load models (不再重复从TaskMaster加载)
             await this.modelConfig.loadModels();
 
             // Update UI state
+            this.updateProjectPathStatus();
+            this.updatePackagePathStatus();
             stateHelpers.setHasUnsavedChanges(false);
+
+            // Try to auto-restore TaskMaster package directory handle
+            await this.tryAutoRestorePackageHandle();
 
             Logger.info('Initial data loaded successfully');
         } catch (error) {
@@ -648,6 +670,260 @@ class TaskMasterConfigApp {
         } catch (error) {
             Logger.error('Auto load configuration failed', { error: error.message }, error);
             this.updateStatus('❌ 加载配置失败', 'error');
+        }
+    }
+
+    // TaskMaster Package Management Methods
+
+    async tryAutoRestorePackageHandle() {
+        try {
+            // 首先尝试从IndexedDB恢复TaskMaster包目录句柄
+            Logger.debug('🔍 尝试从IndexedDB恢复TaskMaster包目录句柄...');
+            const packageHandle = await this.saveConfig.directoryHandleManager.restoreWithPermission('taskmaster-package', 'readwrite');
+
+            if (packageHandle) {
+                Logger.info(`🎉 成功恢复TaskMaster包目录句柄: ${packageHandle.name}`);
+
+                // 更新缓存
+                this.saveConfig.directoryHandleCache.set('taskmaster-package', packageHandle);
+
+                // 验证是否是有效的TaskMaster包
+                const isValidPackage = await this.isTaskMasterPackage(packageHandle);
+                if (isValidPackage) {
+                    const version = await this.getPackageVersion(packageHandle);
+
+                    // 保存包路径到配置
+                    await this.setPackagePath(packageHandle.name);
+
+                    // 更新UI显示
+                    this.updatePackagePathDisplay(packageHandle.name, packageHandle.name);
+                    this.updatePackageStatus('valid', `✅ TaskMaster包已自动恢复 (v${version})`);
+
+                    Logger.info(`🎉 已自动恢复TaskMaster包: ${packageHandle.name} (v${version})`);
+                    return;
+                } else {
+                    Logger.warn(`⚠️ 已恢复包路径，但验证失败: ${packageHandle.name}`);
+                    // 清除无效的句柄
+                    await this.saveConfig.directoryHandleManager.removeDirectoryHandle('taskmaster-package');
+                    return;
+                }
+            }
+
+            // 无法恢复目录句柄，检查是否有保存的包路径
+            const savedPath = this.configManager.getPackagePath();
+            if (savedPath) {
+                Logger.debug(`📁 检测到保存的TaskMaster包路径: ${savedPath}。需要重新选择以授权访问。`);
+                this.updatePackagePathDisplay(savedPath, savedPath);
+                this.updatePackageStatus('warning', '⚠️ 请重新选择以授权访问');
+                return;
+            }
+
+            Logger.debug('No TaskMaster package path set, skipping auto-restore');
+
+        } catch (error) {
+            // Auto-restore failure is not critical, just log it
+            Logger.debug('Auto-restore TaskMaster package handle failed (this is normal): ' + error.message);
+            // Don't show error to user for auto-restore failures
+        }
+    }
+
+
+
+
+
+    async isTaskMasterPackage(dirHandle) {
+        try {
+            // 检查package.json
+            const packageFile = await dirHandle.getFileHandle('package.json');
+            const packageContent = await packageFile.getFile();
+            const packageText = await packageContent.text();
+            const packageJson = JSON.parse(packageText);
+
+            // 检查是否为task-master-ai包
+            if (packageJson.name !== 'task-master-ai') {
+                return false;
+            }
+
+            // 检查是否包含src/ai-providers目录
+            const srcDir = await dirHandle.getDirectoryHandle('src');
+            const providersDir = await srcDir.getDirectoryHandle('ai-providers');
+
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    async getPackageVersion(dirHandle) {
+        try {
+            const packageFile = await dirHandle.getFileHandle('package.json');
+            const packageContent = await packageFile.getFile();
+            const packageText = await packageContent.text();
+            const packageJson = JSON.parse(packageText);
+            return packageJson.version || 'unknown';
+        } catch (error) {
+            return 'unknown';
+        }
+    }
+
+    async selectPackagePath() {
+        try {
+            this.updateStatus('选择TaskMaster包目录...', 'loading');
+
+            // 显示选择指导
+            const savedPath = this.configManager.getPackagePath();
+            if (savedPath) {
+                this.updateStatus(`请选择TaskMaster包目录（上次: ${savedPath}）`, 'info');
+            } else {
+                this.updateStatus('请选择包含package.json和src/ai-providers目录的TaskMaster包根目录', 'info');
+            }
+
+            // 尝试获取上次的目录句柄作为startIn参数
+            let startInOption = 'documents'; // 默认值
+
+            try {
+                const previousHandle = await this.saveConfig.directoryHandleManager.restoreDirectoryHandle('taskmaster-package');
+                if (previousHandle && previousHandle.handle) {
+                    // 尝试使用上次的目录句柄作为startIn
+                    startInOption = previousHandle.handle;
+                    Logger.debug('🎯 使用上次的TaskMaster包目录句柄作为startIn');
+                }
+            } catch (error) {
+                Logger.debug('⚠️ 无法使用上次的TaskMaster包目录句柄，使用默认startIn');
+            }
+
+            // 设置文件选择器选项
+            const pickerOptions = {
+                mode: 'readwrite',
+                startIn: startInOption
+            };
+
+            let dirHandle;
+            try {
+                dirHandle = await window.showDirectoryPicker(pickerOptions);
+            } catch (error) {
+                // 如果使用目录句柄作为startIn失败，回退到默认值
+                if (startInOption !== 'documents') {
+                    Logger.debug('🔄 使用TaskMaster包目录句柄作为startIn失败，回退到documents');
+                    pickerOptions.startIn = 'documents';
+                    dirHandle = await window.showDirectoryPicker(pickerOptions);
+                } else {
+                    throw error;
+                }
+            }
+
+            // 验证是否为TaskMaster包
+            if (await this.isTaskMasterPackage(dirHandle)) {
+                const version = await this.getPackageVersion(dirHandle);
+
+                // 获取包路径 - 只使用目录名作为标识
+                const packagePath = dirHandle.name;
+
+                // 保存路径到配置
+                await this.setPackagePath(packagePath);
+
+                // 保存包句柄
+                this.saveConfig.directoryHandleCache.set('taskmaster-package', dirHandle);
+                await this.saveConfig.directoryHandleManager.saveDirectoryHandle('taskmaster-package', dirHandle);
+
+                // 更新UI显示
+                this.updatePackagePathDisplay(dirHandle.name, dirHandle.name);
+                this.updatePackageStatus('valid', `✅ TaskMaster包已设置 (v${version})`);
+
+                this.updateStatus('TaskMaster包设置成功', 'success');
+            } else {
+                this.updatePackageStatus('invalid', '❌ 所选目录不是有效的TaskMaster包');
+                this.updateStatus('无效的TaskMaster包', 'error');
+            }
+
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                this.updateStatus('用户取消了选择', 'warning');
+            } else {
+                ErrorHandler.handle(error, {
+                    component: 'TaskMasterConfigApp',
+                    method: 'selectPackagePath',
+                    action: 'select_directory'
+                });
+                this.updateStatus('选择包目录失败', 'error');
+            }
+        }
+    }
+
+    async setPackagePath(packagePath) {
+        try {
+            this.updateStatus('正在验证TaskMaster包路径...', 'loading');
+
+            await this.configManager.savePackagePath(packagePath);
+            this.updatePackagePathStatus();
+
+            this.updateStatus('TaskMaster包路径设置成功', 'success');
+        } catch (error) {
+            ErrorHandler.handle(error, {
+                component: 'TaskMasterConfigApp',
+                method: 'setPackagePath',
+                action: 'set_path',
+                packagePath
+            });
+            this.updateStatus('无效的 TaskMaster 包路径', 'error');
+        }
+    }
+
+    async clearPackagePath() {
+        try {
+            // 清除保存的路径
+            await this.configManager.savePackagePath(null);
+
+            // 清除保存的句柄
+            this.saveConfig.directoryHandleCache.delete('taskmaster-package');
+            this.saveConfig.directoryHandleManager.removeDirectoryHandle('taskmaster-package');
+
+            // 更新UI显示
+            this.updatePackagePathStatus();
+
+            this.updateStatus('TaskMaster包路径已清除', 'success');
+
+        } catch (error) {
+            ErrorHandler.handle(error, {
+                component: 'TaskMasterConfigApp',
+                method: 'clearPackagePath',
+                action: 'clear_path'
+            });
+            this.updateStatus('清除包路径失败', 'error');
+        }
+    }
+
+    updatePackagePathDisplay(displayText, fullPath) {
+        const displayElement = document.getElementById('package-path-display');
+        displayElement.textContent = displayText;
+        displayElement.title = fullPath || displayText;
+    }
+
+    updatePackageStatus(type, message) {
+        const statusElement = document.getElementById('package-path-status');
+        statusElement.className = `package-status ${type}`;
+        statusElement.textContent = message;
+    }
+
+    updatePackagePathStatus() {
+        const pathElement = document.getElementById('package-path-display');
+        const statusElement = document.getElementById('package-path-status');
+
+        const packagePath = this.configManager.getPackagePath();
+        const isValid = this.configManager.isPackageValid();
+
+        if (packagePath && isValid) {
+            pathElement.textContent = packagePath;
+            statusElement.textContent = '✅ 有效的 TaskMaster 包';
+            statusElement.className = 'package-status valid';
+        } else if (packagePath && !isValid) {
+            pathElement.textContent = packagePath;
+            statusElement.textContent = '❌ 无效的包路径';
+            statusElement.className = 'package-status invalid';
+        } else {
+            pathElement.textContent = '未选择TaskMaster包';
+            statusElement.textContent = '⚠️ 请选择 TaskMaster 包目录';
+            statusElement.className = 'package-status warning';
         }
     }
 }

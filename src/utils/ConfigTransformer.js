@@ -21,21 +21,7 @@ export class ConfigTransformer {
             'whi': 'openai'
         };
 
-        // Default endpoints for known providers (扩展支持更多供应商)
-        this.defaultEndpoints = {
-            'openai': 'https://api.openai.com',
-            'anthropic': 'https://api.anthropic.com',
-            'google': 'https://generativelanguage.googleapis.com',
-            'polo': 'https://api.polo.ai',
-            'aoapi': 'https://api.aoapi.com',
-            'perplexity': 'https://api.perplexity.ai',
-            'xai': 'https://api.x.ai',
-            'openrouter': 'https://openrouter.ai/api',
-            'ollama': 'http://localhost:11434',
-            '': 'https://api..com',
-            't': 'https://tbai.xin',
-            'whi': 'https://doi9.top'
-        };
+        // 不再使用默认端点，完全由用户配置或实际配置决定
     }
 
     /**
@@ -104,7 +90,7 @@ export class ConfigTransformer {
             const provider = {
                 id: providerId,
                 name: configProvider.name || this.getProviderDisplayName(providerKey),
-                endpoint: configProvider.endpoint || this.getDefaultEndpoint(providerKey),
+                endpoint: configProvider.endpoint || '', // 不使用默认端点，以实际配置为准
                 type: configProvider.type || this.getProviderType(providerKey),
                 apiKey: configProvider.apiKey || '',
                 isValid: !!configProvider.apiKey
@@ -168,14 +154,7 @@ export class ConfigTransformer {
         return nameMap[providerKey] || providerKey.charAt(0).toUpperCase() + providerKey.slice(1);
     }
 
-    /**
-     * Get default endpoint for provider key
-     * @param {string} providerKey - Provider key
-     * @returns {string} Default endpoint
-     */
-    getDefaultEndpoint(providerKey) {
-        return this.defaultEndpoints[providerKey] || '';
-    }
+
 
     /**
      * Get provider type from key
@@ -196,31 +175,15 @@ export class ConfigTransformer {
         const parts = modelId.split('/');
         const name = parts[parts.length - 1];
 
-        // 推断提供商名称
-        const providerName = this.inferProviderFromModelId(name);
-
-        if (providerName) {
-            // 首先尝试使用内置的映射逻辑
-            const mappedName = this.getBuiltinModelMapping(name, providerName);
-            if (mappedName !== name) {
-                return mappedName;
-            }
-
-            try {
-                // 动态导入提供商JS文件
-                const providerModule = await this.loadProviderModule(providerName);
-
-                if (providerModule && providerModule.mapModelId) {
-                    // 如果提供商有mapModelId方法，使用它获取实际API模型名称
-                    return providerModule.mapModelId(name);
-                }
-            } catch (error) {
-                // 静默处理错误，避免控制台警告
-                // console.warn(`Failed to load provider module for ${providerName}:`, error);
-            }
+        // 直接从模型ID中提取供应商前缀
+        const dashIndex = name.indexOf('-');
+        if (dashIndex > 0) {
+            const providerName = name.substring(0, dashIndex);
+            // 使用通用前缀去除逻辑
+            return this.getBuiltinModelMapping(name, providerName);
         }
 
-        // 如果没有找到提供商或mapModelId方法，直接返回原始模型ID
+        // 如果没有前缀，直接返回原始模型ID
         return name;
     }
 
@@ -231,55 +194,16 @@ export class ConfigTransformer {
      * @returns {string} Mapped model name
      */
     getBuiltinModelMapping(modelId, providerName) {
-        // 内置的提供商映射逻辑，作为动态导入的fallback
-        switch (providerName) {
-            case 'foapi':
-                if (modelId.startsWith('foapi-')) {
-                    return modelId.replace('foapi-', '');
-                }
-                break;
-            case 'poloai':
-                if (modelId.startsWith('poloai-')) {
-                    return modelId.replace('poloai-', '');
-                }
-                break;
-            case 'whi': {
-                // whi的特殊映射
-                const whiMap = {
-                    'whi-gemini-2.5-flash-preview-05-20': 'gemini-2.5-flash-preview-05-20'
-                };
-                return whiMap[modelId] || modelId;
+        // 通用的前缀去除逻辑，适用于所有提供商
+        if (providerName) {
+            const providerPrefix = providerName.toLowerCase() + '-';
+            if (modelId.startsWith(providerPrefix)) {
+                return modelId.replace(providerPrefix, '');
             }
-            default:
-                return modelId;
         }
+
+        // 如果没有匹配的前缀，返回原始模型ID
         return modelId;
-    }
-
-    /**
-     * Infer provider name from model ID
-     * @param {string} modelId - Model ID
-     * @returns {string|null} Provider name or null if not found
-     */
-    inferProviderFromModelId(modelId) {
-        const providerPrefixes = {
-            'foapi-': 'foapi',
-            'poloai-': 'poloai',
-            'polo-': 'polo',
-            'aoapi-': 'aoapi',
-            'perplexity-': 'perplexity',
-            'xai-': 'xai',
-            'openrouter-': 'openrouter',
-            'whi-': 'whi'
-        };
-
-        for (const [prefix, providerName] of Object.entries(providerPrefixes)) {
-            if (modelId.startsWith(prefix)) {
-                return providerName;
-            }
-        }
-
-        return null;
     }
 
     /**
@@ -291,7 +215,7 @@ export class ConfigTransformer {
         try {
             // 构建提供商文件路径 - 使用绝对路径从项目根目录
             const providerPath = `/src/ai-providers/${providerName}.js`;
-            const module = await import(providerPath);
+            const module = await import(/* @vite-ignore */ providerPath);
 
             // 获取提供商类
             const providerClassName = this.getProviderClassName(providerName);
@@ -325,6 +249,7 @@ export class ConfigTransformer {
             'xai': 'XAIProvider',
             'openrouter': 'OpenRouterAIProvider',
             'whi': 'WhiProvider',
+            't': 'TProvider',
             'openai': 'OpenAIProvider',
             'anthropic': 'AnthropicAIProvider',
             'google': 'GoogleAIProvider'

@@ -280,6 +280,15 @@ textarea:focus-visible {
     background-color: #475569;
 }
 
+.btn-filter {
+    background-color: #6366f1;
+    color: white;
+}
+
+.btn-filter:hover {
+    background-color: #4f46e5;
+}
+
 .btn-success {
     background-color: var(--success-color);
     color: white;
@@ -317,6 +326,24 @@ textarea:focus-visible {
     grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
     gap: var(--spacing-lg);
     margin-top: var(--spacing-lg);
+}
+
+/* 当providers-grid只包含empty-state时，改为flex布局以实现完美居中 */
+.providers-grid:has(.empty-state) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 60vh;
+    grid-template-columns: none;
+}
+
+/* 为不支持:has()的浏览器提供备用方案 */
+.providers-grid.empty-state-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 60vh;
+    grid-template-columns: none;
 }
 
 /* Models List Container */
@@ -1498,9 +1525,16 @@ textarea:focus-visible {
 
 /* Empty state */
 .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     text-align: center;
     padding: var(--spacing-2xl);
     color: var(--text-secondary);
+    min-height: 400px;
+    margin: 0 auto;
+    max-width: 500px;
 }
 
 .empty-icon {
@@ -2179,5 +2213,131 @@ details[open] summary {
     .log-controls select,
     .log-controls input {
         width: 100%;
+    }
+}
+
+/* TaskMaster Package Section Styles */
+.taskmaster-package-section {
+    margin-bottom: var(--spacing-xl);
+    padding-bottom: var(--spacing-xl);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.taskmaster-package-section h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-md);
+}
+
+.package-path-card {
+    background-color: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-lg);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--spacing-lg);
+}
+
+.package-path-info {
+    flex: 1;
+}
+
+.package-path-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.package-status {
+    font-size: 0.875rem;
+    font-weight: 500;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    display: inline-block;
+}
+
+.package-status.warning {
+    background-color: #fef3c7;
+    color: var(--warning-color);
+    border: 1px solid #fde68a;
+}
+
+.package-status.valid {
+    background-color: #dcfce7;
+    color: var(--success-color);
+    border: 1px solid #bbf7d0;
+}
+
+.package-status.invalid {
+    background-color: #fef2f2;
+    color: var(--danger-color);
+    border: 1px solid #fecaca;
+}
+
+/* Package Location Hints Styles */
+.package-location-hints {
+    margin-top: var(--spacing-lg);
+    padding: var(--spacing-lg);
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+}
+
+.location-hint {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-sm);
+}
+
+.location-hint:last-child {
+    margin-bottom: 0;
+}
+
+.location-hint strong {
+    color: var(--primary-color);
+    font-weight: 600;
+    white-space: nowrap;
+    min-width: 80px;
+    font-size: 0.875rem;
+}
+
+.location-hint code {
+    flex: 1;
+    background: var(--surface-color);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    font-family: 'Courier New', monospace;
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    word-break: break-all;
+}
+
+
+
+/* Mobile responsive for package sections */
+@media (max-width: 768px) {
+    .package-path-card {
+        flex-direction: column;
+        align-items: stretch;
+        text-align: center;
+    }
+
+    .package-path-actions {
+        justify-content: center;
+        flex-direction: column;
+    }
+
+    .location-hint {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--spacing-xs);
+    }
+
+    .location-hint strong {
+        min-width: auto;
     }
 }
