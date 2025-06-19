@@ -303,8 +303,10 @@ export class SaveConfig {
                 );
                 if (mcpContent) {
                     const mcpConfig = JSON.parse(mcpContent);
-                    const mcpEnv = mcpConfig?.mcpServers?.['taskmaster-ai']?.env || {};
-                    Logger.info('✅ mcp.json 读取成功');
+                    // 查找现有的TaskMaster服务器名称
+                    const serverName = this.findTaskMasterServer(mcpConfig);
+                    const mcpEnv = mcpConfig?.mcpServers?.[serverName]?.env || {};
+                    Logger.info(`✅ mcp.json 读取成功，使用服务器: ${serverName}`);
 
                     // 根据supportedModels和API密钥构建providers配置
                     taskMasterConfig.config.providers = await this.buildProvidersFromConfig(
@@ -411,6 +413,26 @@ export class SaveConfig {
     }
 
 
+
+    /**
+     * 查找现有的TaskMaster服务器名称
+     * @param {object} mcpConfig - MCP配置对象
+     * @returns {string} - 找到的服务器名称或默认名称
+     */
+    findTaskMasterServer(mcpConfig) {
+        const possibleNames = ['taskmaster-ai', 'task-master-ai'];
+
+        if (mcpConfig.mcpServers) {
+            for (const serverName of possibleNames) {
+                if (mcpConfig.mcpServers[serverName]) {
+                    return serverName;
+                }
+            }
+        }
+
+        // 如果都不存在，返回默认名称
+        return 'taskmaster-ai';
+    }
 
     /**
      * 获取供应商显示名称
@@ -531,7 +553,7 @@ export class SaveConfig {
                 Logger.info('💾 保存 supported-models.json...');
 
                 // 获取TaskMaster包目录句柄
-                let packageDirHandle = this.directoryHandleCache.get('taskmaster-package');
+                const packageDirHandle = this.directoryHandleCache.get('taskmaster-package');
                 if (!packageDirHandle) {
                     throw new Error('TaskMaster包目录不可用，请先选择TaskMaster包目录');
                 }
@@ -582,22 +604,25 @@ export class SaveConfig {
                 };
             }
 
+            // 查找现有的TaskMaster服务器名称
+            const serverName = this.findTaskMasterServer(mcpConfig);
+
             // 确保MCP配置结构存在
             if (!mcpConfig.mcpServers) {
                 mcpConfig.mcpServers = {};
             }
-            if (!mcpConfig.mcpServers['taskmaster-ai']) {
-                mcpConfig.mcpServers['taskmaster-ai'] = {
+            if (!mcpConfig.mcpServers[serverName]) {
+                mcpConfig.mcpServers[serverName] = {
                     command: 'node',
                     args: ['dist/index.js'],
                     env: {}
                 };
             }
-            if (!mcpConfig.mcpServers['taskmaster-ai'].env) {
-                mcpConfig.mcpServers['taskmaster-ai'].env = {};
+            if (!mcpConfig.mcpServers[serverName].env) {
+                mcpConfig.mcpServers[serverName].env = {};
             }
 
-            const mcpEnv = mcpConfig.mcpServers['taskmaster-ai'].env;
+            const mcpEnv = mcpConfig.mcpServers[serverName].env;
 
             // 更新每个供应商的API密钥
             providers.forEach(provider => {
@@ -889,7 +914,7 @@ export class SaveConfig {
     async writeJavaScriptFileToPackage(relativePath, content) {
         try {
             // 获取TaskMaster包目录句柄
-            let packageDirHandle = this.directoryHandleCache.get('taskmaster-package');
+            const packageDirHandle = this.directoryHandleCache.get('taskmaster-package');
 
             if (!packageDirHandle) {
                 throw new Error('TaskMaster包目录未设置。请先选择TaskMaster包目录。');
@@ -1007,7 +1032,7 @@ export class SaveConfig {
     async updateExistingFileInPackage(relativePath, updateFunction) {
         try {
             // 获取TaskMaster包目录句柄
-            let packageDirHandle = this.directoryHandleCache.get('taskmaster-package');
+            const packageDirHandle = this.directoryHandleCache.get('taskmaster-package');
 
             if (!packageDirHandle) {
                 throw new Error('TaskMaster包目录未设置。请先选择TaskMaster包目录。');

@@ -246,16 +246,17 @@ export class ProviderConfig {
         };
 
         try {
-            // 只检查重复名称，不进行任何格式验证
-            const existingProviders = this.configManager.getAllProviders();
-            const duplicateName = existingProviders.find(p =>
-                p.name.toLowerCase() === providerData.name.toLowerCase() &&
-                p.id !== providerData.id
-            );
+            // 只在添加新供应商时检查重复名称，更新现有供应商时跳过此检查
+            if (!existingProvider) {
+                const existingProviders = this.configManager.getAllProviders();
+                const duplicateName = existingProviders.find(p =>
+                    p.name.toLowerCase() === providerData.name.toLowerCase()
+                );
 
-            if (duplicateName) {
-                this.showValidationErrors(['服务商名称已存在']);
-                return;
+                if (duplicateName) {
+                    this.showValidationErrors(['服务商名称已存在']);
+                    return;
+                }
             }
 
             // Show loading state
@@ -266,7 +267,31 @@ export class ProviderConfig {
 
             try {
                 if (existingProvider) {
-                    await this.configManager.updateProvider(providerData);
+                    // 检查供应商是否在configManager中存在
+                    const providerInManager = this.configManager.getProviderById(providerData.id);
+                    if (providerInManager) {
+                        // 供应商存在，执行更新
+                        await this.configManager.updateProvider(providerData);
+                    } else {
+                        // 供应商不存在（可能是从TaskMaster项目加载的），需要特殊处理
+                        Logger.info(`供应商 ${providerData.name} 在configManager中不存在，检查是否有同名供应商需要替换`);
+
+                        // 检查是否有同名的供应商，如果有就替换，没有就添加
+                        const existingByName = this.configManager.getAllProviders().find(p =>
+                            p.name.toLowerCase() === providerData.name.toLowerCase()
+                        );
+
+                        if (existingByName) {
+                            // 有同名供应商，使用其ID进行更新
+                            Logger.info(`找到同名供应商，使用ID ${existingByName.id} 进行更新`);
+                            providerData.id = existingByName.id;
+                            await this.configManager.updateProvider(providerData);
+                        } else {
+                            // 没有同名供应商，直接添加
+                            Logger.info(`没有同名供应商，直接添加`);
+                            await this.configManager.addProvider(providerData);
+                        }
+                    }
                 } else {
                     await this.configManager.addProvider(providerData);
                 }
@@ -569,6 +594,26 @@ export class ProviderConfig {
     }
 
     /**
+     * 查找现有的TaskMaster服务器名称
+     * @param {object} mcpConfig - MCP配置对象
+     * @returns {string} - 找到的服务器名称或默认名称
+     */
+    findTaskMasterServer(mcpConfig) {
+        const possibleNames = ['taskmaster-ai', 'task-master-ai'];
+
+        if (mcpConfig.mcpServers) {
+            for (const serverName of possibleNames) {
+                if (mcpConfig.mcpServers[serverName]) {
+                    return serverName;
+                }
+            }
+        }
+
+        // 如果都不存在，返回默认名称
+        return 'taskmaster-ai';
+    }
+
+    /**
      * 更新单个供应商的MCP配置
      */
     async updateSingleProviderMCPConfig(projectDirHandle, providerData) {
@@ -603,22 +648,25 @@ export class ProviderConfig {
                 };
             }
 
+            // 查找现有的TaskMaster服务器名称
+            const serverName = this.findTaskMasterServer(mcpConfig);
+
             // 确保MCP配置结构存在
             if (!mcpConfig.mcpServers) {
                 mcpConfig.mcpServers = {};
             }
-            if (!mcpConfig.mcpServers['taskmaster-ai']) {
-                mcpConfig.mcpServers['taskmaster-ai'] = {
+            if (!mcpConfig.mcpServers[serverName]) {
+                mcpConfig.mcpServers[serverName] = {
                     command: 'node',
                     args: ['dist/index.js'],
                     env: {}
                 };
             }
-            if (!mcpConfig.mcpServers['taskmaster-ai'].env) {
-                mcpConfig.mcpServers['taskmaster-ai'].env = {};
+            if (!mcpConfig.mcpServers[serverName].env) {
+                mcpConfig.mcpServers[serverName].env = {};
             }
 
-            const mcpEnv = mcpConfig.mcpServers['taskmaster-ai'].env;
+            const mcpEnv = mcpConfig.mcpServers[serverName].env;
 
             // 只更新当前供应商的API密钥
             if (providerData.apiKey && providerData.apiKey.trim() !== '') {
@@ -642,7 +690,8 @@ export class ProviderConfig {
             try {
                 const verifyContent = await this.saveConfig.readFileFromDirectory(projectDirHandle, mcpConfigPath);
                 const verifyConfig = JSON.parse(verifyContent);
-                const verifyEnv = verifyConfig.mcpServers?.['taskmaster-ai']?.env;
+                const verifyServerName = this.findTaskMasterServer(verifyConfig);
+                const verifyEnv = verifyConfig.mcpServers?.[verifyServerName]?.env;
 
                 if (providerData.apiKey && providerData.apiKey.trim() !== '') {
                     const providerKey = providerData.name.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -710,7 +759,7 @@ export class ProviderConfig {
             // 保存supported-models.json（如果有模型的话）
             if (taskMasterConfig.supportedModels && Object.keys(taskMasterConfig.supportedModels).length > 0) {
                 // 获取TaskMaster包目录句柄
-                let packageDirHandle = saveConfig.directoryHandleCache.get('taskmaster-package');
+                const packageDirHandle = saveConfig.directoryHandleCache.get('taskmaster-package');
                 if (!packageDirHandle) {
                     throw new Error('TaskMaster包目录不可用，请先选择TaskMaster包目录');
                 }
@@ -794,8 +843,8 @@ export class ProviderConfig {
                 }
             }
 
-            // 重新加载providers数据以更新模型数量显示
-            await this.loadProviders();
+            // 更新当前供应商的模型数量显示，而不是重新加载所有供应商
+            await this.updateProviderModelCount(provider.id);
 
             // 导航到模型页面并过滤显示该服务商的模型
             this.navigateToModelsPage(provider);
@@ -824,6 +873,42 @@ export class ProviderConfig {
                 loadBtn.innerHTML = '<span class="btn-icon">📥</span>加载模型';
                 loadBtn.disabled = false;
             }
+        }
+    }
+
+    /**
+     * 更新指定供应商的模型数量显示
+     * @param {string} providerId - 供应商ID
+     */
+    async updateProviderModelCount(providerId) {
+        try {
+            // 获取该供应商的模型数量
+            const allModels = await this.configManager.getModels();
+            const providerModels = allModels.filter(model => model.providerId === providerId);
+            const modelCount = providerModels.length;
+
+            // 更新UI中的模型数量显示
+            const providerCard = document.querySelector(`[data-provider-id="${providerId}"]`);
+            if (providerCard) {
+                const modelCountElement = providerCard.querySelector('.model-count');
+                if (modelCountElement) {
+                    modelCountElement.textContent = `${modelCount} 个模型`;
+                }
+
+                // 更新模型按钮状态
+                const loadBtn = providerCard.querySelector('.load-models-btn');
+                const filterBtn = providerCard.querySelector('.filter-models-btn');
+
+                if (modelCount > 0) {
+                    if (loadBtn) loadBtn.style.display = 'none';
+                    if (filterBtn) filterBtn.style.display = 'inline-block';
+                } else {
+                    if (loadBtn) loadBtn.style.display = 'inline-block';
+                    if (filterBtn) filterBtn.style.display = 'none';
+                }
+            }
+        } catch (error) {
+            Logger.error('更新供应商模型数量失败', { providerId, error: error.message }, error);
         }
     }
 
@@ -1045,20 +1130,23 @@ export class ProviderConfig {
                 };
             }
 
+            // 查找现有的TaskMaster服务器名称
+            const serverName = this.findTaskMasterServer(mcpConfig);
+
             // 确保结构存在
             if (!mcpConfig.mcpServers) mcpConfig.mcpServers = {};
-            if (!mcpConfig.mcpServers['taskmaster-ai']) {
-                mcpConfig.mcpServers['taskmaster-ai'] = {
+            if (!mcpConfig.mcpServers[serverName]) {
+                mcpConfig.mcpServers[serverName] = {
                     command: 'node',
                     args: ['dist/index.js'],
                     env: {}
                 };
             }
-            if (!mcpConfig.mcpServers['taskmaster-ai'].env) {
-                mcpConfig.mcpServers['taskmaster-ai'].env = {};
+            if (!mcpConfig.mcpServers[serverName].env) {
+                mcpConfig.mcpServers[serverName].env = {};
             }
 
-            const mcpEnv = mcpConfig.mcpServers['taskmaster-ai'].env;
+            const mcpEnv = mcpConfig.mcpServers[serverName].env;
             const envVarName = `${providerName.toUpperCase()}_API_KEY`;
 
             console.log(`🔑 设置 ${envVarName} = ${apiKey}`);

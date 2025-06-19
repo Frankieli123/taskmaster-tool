@@ -251,6 +251,7 @@ class TaskMasterConfigApp {
             appActions.showStatus('正在重置配置...', 'loading');
 
             await this.configManager.resetConfiguration();
+            // 重置后重新加载所有数据（这是用户明确要求的重置操作）
             await this.loadInitialData();
 
             stateHelpers.setHasUnsavedChanges(false);
@@ -588,8 +589,8 @@ class TaskMasterConfigApp {
                 const autoLoaded = await this.saveConfig.tryAutoLoadExistingConfig();
 
                 if (autoLoaded) {
-                    // 重新加载数据
-                    await this.loadInitialData();
+                    // 只重新加载模型数据，保持现有的供应商配置
+                    await this.modelConfig.loadModels();
                     const providers = await this.configManager.getProviders();
                     const models = await this.configManager.getModels();
 
@@ -657,8 +658,8 @@ class TaskMasterConfigApp {
             const success = await this.saveConfig.tryAutoLoadExistingConfig();
 
             if (success) {
-                // 重新加载界面数据
-                await this.loadInitialData();
+                // 只重新加载模型数据，保持现有的供应商配置
+                await this.modelConfig.loadModels();
 
                 const providers = await this.configManager.getProviders();
                 const models = await this.configManager.getModels();

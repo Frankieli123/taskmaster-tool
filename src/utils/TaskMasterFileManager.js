@@ -22,14 +22,14 @@ export class TaskMasterFileManager {
 
         // 开始添加供应商模型
 
-        // 1. 创建AI provider文件
-        await this.createProviderFile(providerName, originalModelId, prefixedModelId);
+        // 1. 确保AI provider文件存在（如果已存在则跳过，避免覆盖端点配置）
+        await this.ensureProviderFile(providerName, originalModelId, prefixedModelId);
 
         // 2. 更新supported-models.json
         await this.updateSupportedModelsFile(providerName, prefixedModelId, modelConfig);
 
-        // 3. 更新provider的index.js导出
-        await this.updateProviderIndexFile(providerName);
+        // 3. 确保provider的index.js导出存在
+        await this.ensureProviderIndexExport(providerName);
 
         // 成功添加供应商模型
 
@@ -42,7 +42,7 @@ export class TaskMasterFileManager {
     }
 
     /**
-     * 创建AI provider文件
+     * 创建AI provider文件（仅在添加供应商时使用，导入模型时不应调用此方法）
      */
     async createProviderFile(providerName, originalModelId, prefixedModelId) {
         const providerFileName = `${providerName.toLowerCase()}.js`;
@@ -258,7 +258,7 @@ export class TaskMasterFileManager {
      */
     generateProviderFileContent(providerName, _originalModelId, _prefixedModelId, providerConfig = null) {
         const className = `${providerName.charAt(0).toUpperCase() + providerName.slice(1)}Provider`;
-        const configuredEndpoint = providerConfig?.endpoint || this.getCorrectDefaultEndpoint(providerName.toLowerCase());
+        const configuredEndpoint = providerConfig?.endpoint || '';
 
         return `/**
  * ${providerName.toLowerCase()}.js
@@ -378,7 +378,7 @@ export class ${className} extends BaseAIProvider {
      */
     generateProviderFileContentBasic(providerName, providerConfig) {
         const className = `${providerName.charAt(0).toUpperCase() + providerName.slice(1)}Provider`;
-        const configuredEndpoint = providerConfig?.endpoint || this.getCorrectDefaultEndpoint(providerName.toLowerCase());
+        const configuredEndpoint = providerConfig?.endpoint || '';
 
         return `/**
  * ${providerName.toLowerCase()}.js
@@ -491,25 +491,7 @@ export class ${className} extends BaseAIProvider {
 `;
     }
 
-    /**
-     * 获取服务商的正确默认端点
-     * @param {string} providerName - 服务商名称（小写）
-     * @returns {string} 默认端点URL或空字符串
-     */
-    getCorrectDefaultEndpoint(providerName) {
-        const defaultEndpoints = {
-            'openai': 'https://api.openai.com',
-            'anthropic': 'https://api.anthropic.com',
-            'openrouter': 'https://openrouter.ai/api',
-            'perplexity': 'https://api.perplexity.ai',
-            'xai': 'https://api.x.ai',
-            'google': 'https://generativelanguage.googleapis.com',
-            'ollama': 'http://localhost:11434',
-            // 其他有默认端点的服务商可以在这里添加
-        };
 
-        return defaultEndpoints[providerName.toLowerCase()] || '';
-    }
 
     /**
      * 检查provider文件是否已存在
@@ -656,6 +638,35 @@ export class ${className} extends BaseAIProvider {
             jsonSnippet,
             instruction: `请将以下JSON对象添加到 scripts/modules/supported-models.json 文件中的 "${providerName.toLowerCase()}" 数组中:`
         };
+    }
+
+    /**
+     * 确保provider的index.js导出存在（如果已存在则跳过）
+     */
+    async ensureProviderIndexExport(providerName) {
+        const indexPath = 'src/ai-providers/index.js';
+        const className = `${providerName.charAt(0).toUpperCase() + providerName.slice(1)}Provider`;
+        const exportLine = `export { ${className} } from './${providerName.toLowerCase()}.js';`;
+
+        // 使用updateExistingFileInPackage方法检查并更新index.js
+        await this.saveConfig.updateExistingFileInPackage(indexPath, (existingContent) => {
+            // 检查是否已存在该导出
+            if (existingContent.includes(exportLine)) {
+                // 导出已存在，无需修改
+                return existingContent;
+            }
+
+            // 确保内容以换行符结尾，然后添加新的导出行
+            let updatedContent = existingContent.trim();
+            if (updatedContent.length > 0) {
+                updatedContent += '\n';
+            }
+            updatedContent += exportLine;
+
+            return updatedContent;
+        });
+
+        return true;
     }
 
     /**
@@ -861,6 +872,26 @@ export class ${className} extends BaseAIProvider {
     }
 
     /**
+     * 查找现有的TaskMaster服务器名称
+     * @param {object} mcpConfig - MCP配置对象
+     * @returns {string} - 找到的服务器名称或默认名称
+     */
+    findTaskMasterServer(mcpConfig) {
+        const possibleNames = ['taskmaster-ai', 'task-master-ai'];
+
+        if (mcpConfig.mcpServers) {
+            for (const serverName of possibleNames) {
+                if (mcpConfig.mcpServers[serverName]) {
+                    return serverName;
+                }
+            }
+        }
+
+        // 如果都不存在，返回默认名称
+        return 'taskmaster-ai';
+    }
+
+    /**
      * 更新MCP配置文件，添加API密钥
      * @param {string} providerName - 供应商名称
      * @param {string} [apiKeyValue] - 实际的API密钥值，如果不提供则使用占位符
@@ -891,22 +922,25 @@ export class ${className} extends BaseAIProvider {
                 };
             }
 
+            // 查找现有的TaskMaster服务器名称
+            const serverName = this.findTaskMasterServer(mcpConfig);
+
             // 确保MCP配置结构存在
             if (!mcpConfig.mcpServers) {
                 mcpConfig.mcpServers = {};
             }
-            if (!mcpConfig.mcpServers['taskmaster-ai']) {
-                mcpConfig.mcpServers['taskmaster-ai'] = {
+            if (!mcpConfig.mcpServers[serverName]) {
+                mcpConfig.mcpServers[serverName] = {
                     command: 'node',
                     args: ['dist/index.js'],
                     env: {}
                 };
             }
-            if (!mcpConfig.mcpServers['taskmaster-ai'].env) {
-                mcpConfig.mcpServers['taskmaster-ai'].env = {};
+            if (!mcpConfig.mcpServers[serverName].env) {
+                mcpConfig.mcpServers[serverName].env = {};
             }
 
-            const mcpEnv = mcpConfig.mcpServers['taskmaster-ai'].env;
+            const mcpEnv = mcpConfig.mcpServers[serverName].env;
 
             // 设置API密钥值
             const keyValue = apiKeyValue && apiKeyValue.trim() !== ''
@@ -1356,9 +1390,10 @@ export class ${className} extends BaseAIProvider {
             const apiKeyName = `${providerName.toUpperCase()}_API_KEY`;
             let removed = false;
 
-            // 检查并删除API密钥
-            if (mcpConfig.mcpServers && mcpConfig.mcpServers['taskmaster-ai'] && mcpConfig.mcpServers['taskmaster-ai'].env) {
-                const env = mcpConfig.mcpServers['taskmaster-ai'].env;
+            // 查找现有的TaskMaster服务器名称并删除API密钥
+            const serverName = this.findTaskMasterServer(mcpConfig);
+            if (mcpConfig.mcpServers && mcpConfig.mcpServers[serverName] && mcpConfig.mcpServers[serverName].env) {
+                const env = mcpConfig.mcpServers[serverName].env;
                 if (env[apiKeyName]) {
                     delete env[apiKeyName];
                     removed = true;
