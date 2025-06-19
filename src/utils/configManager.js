@@ -4,6 +4,7 @@
  */
 
 import { Validation } from './validation.js';
+import { Logger } from './Logger.js';
 
 export class ConfigManager {
     constructor() {
@@ -26,10 +27,22 @@ export class ConfigManager {
         // Initialize package path
         await this.initializePackagePath();
 
-        // 不从localStorage读取，只保持空状态
-        // 模型数据只从TaskMaster项目读取
-        this.providers = [];
-        this.models = [];
+        // 从localStorage读取用户配置的供应商和模型
+        try {
+            const savedConfig = localStorage.getItem(this.storageKey);
+            if (savedConfig) {
+                const config = JSON.parse(savedConfig);
+                this.providers = config.providers || [];
+                this.models = config.models || [];
+            } else {
+                this.providers = [];
+                this.models = [];
+            }
+        } catch (error) {
+            // 如果读取失败，使用空状态
+            this.providers = [];
+            this.models = [];
+        }
 
         return true;
     }

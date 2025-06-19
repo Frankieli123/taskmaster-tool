@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "task-master-ai": {
+      "command": "node",
+      "args": [
+        "E:/APP/BBB/claude-task-master-main/mcp-server/server.js"
+      ],
+      "env": {
+        "ANTHROPIC_API_KEY": "ANTHROPIC_API_KEY_HERE",
+        "PERPLEXITY_API_KEY": "PERPLEXITY_API_KEY_HERE",
+        "OPENAI_API_KEY": "OPENAI_API_KEY_HERE",
+        "GOOGLE_API_KEY": "GOOGLE_API_KEY_HERE",
+        "XAI_API_KEY": "XAI_API_KEY_HERE",
+        "OPENROUTER_API_KEY": "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",
+        "MISTRAL_API_KEY": "MISTRAL_API_KEY_HERE",
+        "AZURE_OPENAI_API_KEY": "AZURE_OPENAI_API_KEY_HERE",
+        "OLLAMA_API_KEY": "OLLAMA_API_KEY_HERE",
+        "GITHUB_API_KEY": "GITHUB_API_KEY_HERE",
+        "WHI_API_KEY": "sk-3AEY28Or8ORvWbwgYJo7DXftapQPk7GyMI7pDaQyi4XOpKyP",
+        "T_API_KEY": "sk-X8Sq25libdvoDgQT1ksWZEYrclZSVNLDHNdKmFxUPTYEAmJf",
+        "SBB_API_KEY": "sk-toThp4S4Alqd2wGyEWzdDcUh3XjhDgFcSn4nRWEZOCXSeHTJ",
+        "T2_API_KEY": "sk-qy5LSbvLfFay3RGWwVakxhFpBacKqvR8G3CSCmPGvUe7xSZW",
+        "POLO_API_KEY": "sk-Q8qV5EO7UW2jdc3x5bWKKDvY66smIR0vmA125GMYj00n1qvL"
+      }
+    }
+  }
+}

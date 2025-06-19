@@ -589,7 +589,8 @@ class TaskMasterConfigApp {
                 const autoLoaded = await this.saveConfig.tryAutoLoadExistingConfig();
 
                 if (autoLoaded) {
-                    // 只重新加载模型数据，保持现有的供应商配置
+                    // 重新加载供应商和模型数据
+                    await this.providerConfig.loadProviders();
                     await this.modelConfig.loadModels();
                     const providers = await this.configManager.getProviders();
                     const models = await this.configManager.getModels();
@@ -658,7 +659,8 @@ class TaskMasterConfigApp {
             const success = await this.saveConfig.tryAutoLoadExistingConfig();
 
             if (success) {
-                // 只重新加载模型数据，保持现有的供应商配置
+                // 重新加载供应商和模型数据
+                await this.providerConfig.loadProviders();
                 await this.modelConfig.loadModels();
 
                 const providers = await this.configManager.getProviders();

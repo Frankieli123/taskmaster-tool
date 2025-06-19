@@ -824,8 +824,8 @@ export class ProviderConfig {
                     allowedRoles: ['main', 'fallback'], // 默认角色
                     maxTokens: modelInfo.maxTokens || 4096,
                     costPer1MTokens: {
-                        input: modelInfo.cost || 0,
-                        output: modelInfo.cost || 0
+                        input: modelInfo.inputCost || modelInfo.cost || 0.001,
+                        output: modelInfo.outputCost || modelInfo.cost || 0.001
                     },
                     sweScore: (modelInfo.swe_score * 100) || 0, // 转换为百分比
                     isActive: true
@@ -895,14 +895,16 @@ export class ProviderConfig {
                     modelCountElement.textContent = `${modelCount} 个模型`;
                 }
 
-                // 更新模型按钮状态
+                // 更新模型按钮状态 - 始终显示两个按钮
                 const loadBtn = providerCard.querySelector('.load-models-btn');
                 const filterBtn = providerCard.querySelector('.filter-models-btn');
 
                 if (modelCount > 0) {
-                    if (loadBtn) loadBtn.style.display = 'none';
+                    // 有模型时，显示两个按钮
+                    if (loadBtn) loadBtn.style.display = 'inline-block';
                     if (filterBtn) filterBtn.style.display = 'inline-block';
                 } else {
+                    // 没有模型时，只显示加载按钮
                     if (loadBtn) loadBtn.style.display = 'inline-block';
                     if (filterBtn) filterBtn.style.display = 'none';
                 }
@@ -1031,12 +1033,18 @@ export class ProviderConfig {
             // OpenAI格式
             for (const model of data.data) {
                 if (model.id && typeof model.id === 'string') {
+                    // 尝试从API响应中提取成本信息
+                    const inputCost = this.extractCostFromModel(model, 'input');
+                    const outputCost = this.extractCostFromModel(model, 'output');
+
                     models.push({
                         id: model.id,
                         name: model.id,
-                        swe_score: 0.3, // 默认值
-                        maxTokens: 4096, // 默认值
-                        cost: 0.001 // 默认值
+                        swe_score: model.swe_score || 0.3, // 使用API返回的值或默认值
+                        maxTokens: model.max_tokens || model.maxTokens || 4096, // 使用API返回的值或默认值
+                        cost: inputCost || 0.001, // 使用提取的输入成本或默认值0.001
+                        inputCost: inputCost || 0.001,
+                        outputCost: outputCost || 0.001
                     });
                 }
             }
@@ -1045,18 +1053,69 @@ export class ProviderConfig {
             for (const model of data.models) {
                 if (model.name) {
                     const modelId = model.name.split('/').pop(); // 提取模型ID
+                    const inputCost = this.extractCostFromModel(model, 'input');
+                    const outputCost = this.extractCostFromModel(model, 'output');
+
                     models.push({
                         id: modelId,
                         name: model.displayName || modelId,
-                        swe_score: 0.3,
-                        maxTokens: 4096,
-                        cost: 0.001
+                        swe_score: model.swe_score || 0.3,
+                        maxTokens: model.max_tokens || model.maxTokens || 4096,
+                        cost: inputCost || 0.001,
+                        inputCost: inputCost || 0.001,
+                        outputCost: outputCost || 0.001
                     });
                 }
             }
         }
 
         return models;
+    }
+
+    /**
+     * 从模型数据中提取成本信息
+     */
+    extractCostFromModel(model, type) {
+        // 尝试多种可能的成本字段名称
+        const costFields = [
+            `${type}_cost`,
+            `${type}Cost`,
+            `cost_per_1m_tokens_${type}`,
+            `costPer1MTokens${type.charAt(0).toUpperCase() + type.slice(1)}`,
+            'pricing',
+            'cost',
+            'price'
+        ];
+
+        for (const field of costFields) {
+            if (model[field] !== undefined && model[field] !== null) {
+                const cost = parseFloat(model[field]);
+                if (!isNaN(cost) && cost >= 0) {
+                    return cost;
+                }
+            }
+        }
+
+        // 检查嵌套的成本对象
+        if (model.pricing) {
+            if (model.pricing[type] !== undefined) {
+                const cost = parseFloat(model.pricing[type]);
+                if (!isNaN(cost) && cost >= 0) {
+                    return cost;
+                }
+            }
+        }
+
+        if (model.cost_per_1m_tokens) {
+            if (model.cost_per_1m_tokens[type] !== undefined) {
+                const cost = parseFloat(model.cost_per_1m_tokens[type]);
+                if (!isNaN(cost) && cost >= 0) {
+                    return cost;
+                }
+            }
+        }
+
+        return null; // 没有找到有效的成本数据
     }
 
     /**

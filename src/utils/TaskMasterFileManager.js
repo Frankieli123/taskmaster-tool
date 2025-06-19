@@ -1040,14 +1040,9 @@ export class ${className} extends BaseAIProvider {
      * @param {object} providerConfig - 供应商配置
      */
     async updateUIToolConfigs(providerName, providerConfig) {
-        const providerKey = providerName.toLowerCase();
-
-        // 只更新ConfigTransformer.js的映射配置（用于数据转换）
-        // 不更新默认供应商配置，因为UI应该只显示实际导入的供应商
-
-        // 更新UI工具的ConfigTransformer.js (使用相对路径)
-        await this.updateUIToolConfigTransformer(providerKey, providerName, providerConfig);
-
+        // 不再更新ConfigTransformer.js文件，避免下载文件
+        // ConfigTransformer.js现在使用静态配置，新供应商通过动态映射处理
+        Logger.info(`跳过ConfigTransformer.js更新，供应商 ${providerName} 将使用动态类型映射`);
         return true;
     }
 
